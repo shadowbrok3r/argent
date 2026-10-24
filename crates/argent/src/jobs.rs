@@ -525,8 +525,20 @@ pub fn render_reel(
             }
         }
     };
+    // Land the track's drop on the rig's main moment, as Forge's studio PC does.
+    let main_moment = match rig {
+        Rig::Turntable => 0.8,
+        Rig::Reveal => 0.38 * seconds,
+        Rig::Sweep => 0.5 * seconds,
+    };
     let audio_spec = match audio {
-        Some(a) => argent_post::video::Audio::File(a),
+        Some(a) => match cut_to_drop(&a, seconds, main_moment) {
+            Ok(cut) => argent_post::video::Audio::File(cut),
+            Err(e) => {
+                eprintln!("  audio: couldn't align the drop ({e:#}); using the track from its start");
+                argent_post::video::Audio::File(a)
+            }
+        },
         None => argent_post::video::Audio::Silent,
     };
     if let Some(dir) = out.parent() {
@@ -567,6 +579,68 @@ pub fn render_reel(
     writer.finish()?;
     eprintln!("{} ({} frames, {:.1}s) in {:.1?}", out.display(), n, seconds, t0.elapsed());
     Ok(())
+}
+
+/// Loudness per 50 ms window (dB RMS) of an audio file, via ffmpeg.
+fn loudness_envelope(path: &Path) -> Result<Vec<f32>> {
+    let out = std::process::Command::new("ffmpeg")
+        .args(["-hide_banner", "-loglevel", "error", "-t", "120", "-i"])
+        .arg(path)
+        .args([
+            "-af",
+            "aresample=8000,asetnsamples=n=400,astats=metadata=1:reset=1,ametadata=print:key=lavfi.astats.Overall.RMS_level:file=-",
+            "-f",
+            "null",
+            "-",
+        ])
+        .output()
+        .context("running ffmpeg")?;
+    let text = String::from_utf8_lossy(&out.stdout);
+    Ok(text
+        .lines()
+        .filter_map(|l| l.split("RMS_level=").nth(1))
+        .map(|v| v.trim().parse::<f32>().unwrap_or(-90.0).max(-90.0))
+        .collect())
+}
+
+/// Find the drop: the first jump of ≥ 8 dB between the mean of the
+/// preceding second and the following 250 ms, at least 2 s in. Seconds.
+fn find_drop(env: &[f32]) -> Option<f32> {
+    const W: usize = 20; // 1 s of 50 ms windows
+    let mut best: Option<(usize, f32)> = None;
+    for i in 40.max(W)..env.len().saturating_sub(5) {
+        let before = env[i - W..i].iter().sum::<f32>() / W as f32;
+        let after = env[i..i + 5].iter().sum::<f32>() / 5.0;
+        let jump = after - before;
+        if jump >= 8.0 {
+            return Some(i as f32 * 0.05);
+        }
+        if best.is_none_or(|b| jump > b.1) {
+            best = Some((i, jump));
+        }
+    }
+    best.filter(|b| b.1 >= 4.0).map(|b| b.0 as f32 * 0.05)
+}
+
+/// Cut `track` so its drop lands `at` seconds into a `len`-second reel,
+/// with a short fade-out; returns the cut file.
+fn cut_to_drop(track: &Path, len: f32, at: f32) -> Result<PathBuf> {
+    let env = loudness_envelope(track)?;
+    let drop = find_drop(&env).context("no drop found")?;
+    let start = (drop - at).max(0.0);
+    let out = std::env::temp_dir().join(format!("argent-audio-{}-{:.0}.m4a", std::process::id(), start * 1000.0));
+    let fade = 0.8f32.min(len * 0.2);
+    let status = std::process::Command::new("ffmpeg")
+        .args(["-hide_banner", "-loglevel", "error", "-y", "-ss", &format!("{start:.3}"), "-t", &format!("{len:.3}"), "-i"])
+        .arg(track)
+        .args(["-af", &format!("afade=t=in:st=0:d=0.05,afade=t=out:st={:.3}:d={fade:.3}", len - fade), "-c:a", "aac", "-b:a", "192k", "-ar", "48000"])
+        .arg(&out)
+        .status()?;
+    if !status.success() {
+        bail!("ffmpeg cut failed");
+    }
+    eprintln!("  audio: drop at {drop:.2}s lands at {at:.2}s of the reel (track from {start:.2}s)");
+    Ok(out)
 }
 
 /// Burned-in hook: full opacity for 1.6 s, fading out by 2.2 s.
@@ -728,4 +802,30 @@ pub fn batch(dir: &Path, out: &Path, shot: &ShotArgs, metals: &[String], views: 
     std::fs::write(out.join("index.html"), html)?;
     eprintln!("catalog: {} pieces → {}", rows.len(), out.join("index.html").display());
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn drop_is_the_first_big_jump() {
+        let mut env = vec![-18.0f32; 400];
+        for v in env.iter_mut().skip(264) {
+            *v = -6.0;
+        }
+        let d = find_drop(&env).unwrap();
+        assert!((d - 13.2).abs() < 0.11, "{d}");
+    }
+
+    #[test]
+    fn real_track_drop() {
+        let p = Path::new("/home/shadowbroker/argent/library/audio/ES_Lone_Wolf-Toby_Tranter.mp3");
+        if !p.exists() {
+            return;
+        }
+        let env = loudness_envelope(p).unwrap();
+        let d = find_drop(&env).unwrap();
+        assert!((d - 13.22).abs() < 0.15, "{d}");
+    }
 }
