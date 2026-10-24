@@ -185,7 +185,10 @@ pub fn trace(scene: &Scene, mut ray: Ray, wl: &mut Wavelengths, s: &mut Sampler,
             break;
         }
         let wi_w = frame.to_world(smp.wi);
-        let side = wi_w.dot(ngu);
+        // Reflection stays on wo's side of the true surface, transmission
+        // crosses it. (Inside a stone wo is on the inner side, so a total
+        // internal reflection is valid with wi·n < 0.)
+        let side = wi_w.dot(ngu) * wo_w.dot(ngu);
         if (!smp.transmit && side <= 0.0) || (smp.transmit && side >= 0.0) {
             break;
         }
