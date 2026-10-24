@@ -38,6 +38,11 @@ pub struct Look {
     pub exposure_ev: f32,
     /// AgX look: `base`, `punchy` or `golden`.
     pub grade: String,
+    /// Light with a photographed environment (equirectangular .hdr) instead
+    /// of the studio's softboxes; the studio's floor stays.
+    pub hdri: Option<String>,
+    pub hdri_rotate: f32,
+    pub hdri_exposure: f32,
 }
 
 impl Default for Look {
@@ -50,6 +55,9 @@ impl Default for Look {
             studio: Studio::Noir,
             exposure_ev: 0.0,
             grade: "punchy".into(),
+            hdri: None,
+            hdri_rotate: 0.0,
+            hdri_exposure: 0.0,
         }
     }
 }
@@ -209,8 +217,19 @@ impl Prepared {
             materials.push(m);
             floor_at(self.floor_y - 0.005, materials.len() - 1, (a, b), self.radius)
         });
-        let mut scene = Scene::new(piece, materials, rig.panels, rig.env, floor);
-        scene.white = rig.white_kelvin.map(crate::color::blackbody_white);
+        let hdri = look.hdri.as_deref().and_then(|p| match cached_envmap(p, look.hdri_exposure, look.hdri_rotate) {
+            Ok(m) => Some(m),
+            Err(e) => {
+                eprintln!("argent: couldn't load HDRI {p}: {e:#}; using the studio lights");
+                None
+            }
+        });
+        let (panels, env, white) = match hdri {
+            Some(m) => (vec![], crate::light::Env::Map(m), None),
+            None => (rig.panels, rig.env, rig.white_kelvin.map(crate::color::blackbody_white)),
+        };
+        let mut scene = Scene::new(piece, materials, panels, env, floor);
+        scene.white = white;
         scene
     }
 
@@ -254,6 +273,26 @@ impl Prepared {
         }
         frame(&pts, view, lens, aspect)
     }
+}
+
+/// Environment maps are slow to load and build (≈0.2 s for 2K); keep the
+/// last few by (path, exposure, rotation).
+fn cached_envmap(path: &str, exposure: f32, rotate: f32) -> anyhow::Result<Arc<crate::envmap::EnvMap>> {
+    use parking_lot::Mutex;
+    use std::sync::OnceLock;
+    static CACHE: OnceLock<Mutex<Vec<(String, u32, u32, Arc<crate::envmap::EnvMap>)>>> = OnceLock::new();
+    let cache = CACHE.get_or_init(|| Mutex::new(vec![]));
+    let key = (path.to_string(), exposure.to_bits(), rotate.to_bits());
+    if let Some(hit) = cache.lock().iter().find(|e| e.0 == key.0 && e.1 == key.1 && e.2 == key.2) {
+        return Ok(hit.3.clone());
+    }
+    let m = crate::envmap::EnvMap::load(std::path::Path::new(path), exposure, rotate)?;
+    let mut c = cache.lock();
+    if c.len() >= 3 {
+        c.remove(0);
+    }
+    c.push((key.0, key.1, key.2, m.clone()));
+    Ok(m)
 }
 
 /// Find a gem name in free text ("Shoulder emerald / 25 degrees" → emerald).

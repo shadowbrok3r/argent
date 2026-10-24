@@ -58,6 +58,9 @@ pub struct Scene {
     /// Emitting panels and their selection CDF (by power).
     pub(crate) lights: Vec<usize>,
     pub(crate) light_cdf: Vec<f32>,
+    /// Probability that next-event estimation samples the environment map
+    /// instead of a panel (0 without an image environment).
+    pub(crate) env_pick: f32,
 }
 
 /// What a ray hit.
@@ -77,7 +80,7 @@ impl Hit {
 
 impl Scene {
     pub fn new(piece: std::sync::Arc<Piece>, materials: Vec<Material>, panels: Vec<Panel>, env: Env, floor: Option<Floor>) -> Scene {
-        let mut s = Scene { piece, materials, panels, env, floor, turntable_deg: 0.0, white: None, lights: vec![], light_cdf: vec![] };
+        let mut s = Scene { piece, materials, panels, env, floor, turntable_deg: 0.0, white: None, lights: vec![], light_cdf: vec![], env_pick: 0.0 };
         s.rebuild_lights();
         s
     }
@@ -99,6 +102,41 @@ impl Scene {
                 *c /= acc;
             }
         }
+        self.env_pick = match (&self.env, self.lights.is_empty()) {
+            (Env::Map(_), true) => 1.0,
+            (Env::Map(_), false) => 0.5,
+            _ => 0.0,
+        };
+    }
+
+    /// The importance-sampled environment, if any.
+    pub(crate) fn env_map(&self) -> Option<&crate::envmap::EnvMap> {
+        match &self.env {
+            Env::Map(m) => Some(m),
+            _ => None,
+        }
+    }
+
+    /// Transmittance toward infinity along `dir`: 0 if the piece or a panel
+    /// blocks it; the floor blocks by its presence (its fade is treated as
+    /// partial transparency, matching the stochastic test camera paths use).
+    pub fn sky_visibility(&self, from: V3, dir: V3) -> f32 {
+        let oray = Ray::new(self.to_object(from), self.to_object(dir));
+        if self.piece.bvh.occluded(&oray, f32::INFINITY) {
+            return 0.0;
+        }
+        let ray = Ray::new(from, dir);
+        for p in &self.panels {
+            if p.intersect(&ray, f32::INFINITY).is_some() {
+                return 0.0;
+            }
+        }
+        if let Some(f) = &self.floor {
+            if let Some(t) = f.intersect(&ray, f32::INFINITY) {
+                return 1.0 - f.presence(ray.at(t));
+            }
+        }
+        1.0
     }
 
     /// Probability of choosing light `panel` in light sampling.

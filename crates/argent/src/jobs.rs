@@ -92,6 +92,15 @@ pub struct ShotArgs {
     pub no_denoise: bool,
     #[arg(long, default_value_t = 32)]
     pub max_depth: u32,
+    /// Light with an equirectangular HDR environment instead of the studio's softboxes.
+    #[arg(long)]
+    pub hdri: Option<PathBuf>,
+    /// Turn the environment, degrees.
+    #[arg(long, default_value_t = 0.0, allow_hyphen_values = true)]
+    pub hdri_rotate: f32,
+    /// Environment exposure, EV.
+    #[arg(long, default_value_t = 0.0, allow_hyphen_values = true)]
+    pub hdri_exposure: f32,
 }
 
 /// When set, print ZeroClaw delivery markers for final outputs.
@@ -319,6 +328,9 @@ pub fn look(shot: &ShotArgs) -> Result<Look> {
         studio,
         exposure_ev: shot.exposure,
         grade: shot.grade.clone(),
+        hdri: shot.hdri.as_ref().map(|p| p.display().to_string()),
+        hdri_rotate: shot.hdri_rotate,
+        hdri_exposure: shot.hdri_exposure,
     })
 }
 

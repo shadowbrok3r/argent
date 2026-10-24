@@ -65,9 +65,20 @@ pub fn trace(scene: &Scene, mut ray: Ray, wl: &mut Wavelengths, s: &mut Sampler,
             let sig = m.sample(wl);
             beta *= (-sig * h.t()).exp();
         }
+        // Environment seen by a continuing ray: MIS-weighted against the
+        // environment's own light sampling when that is in use.
+        let env_weight = |dir: V3| -> f32 {
+            match scene.env_map() {
+                Some(m) if !specular => {
+                    let pl = scene.env_pick * m.pdf(dir);
+                    prev_pdf * prev_pdf / (prev_pdf * prev_pdf + pl * pl)
+                }
+                _ => 1.0,
+            }
+        };
         let (p, p_obj, ng, ns, mat_id, cavity) = match hit {
             None => {
-                add_clamped(&mut l, beta * scene.env.eval(ray.d, wl), clamp);
+                add_clamped(&mut l, beta * scene.env.eval(ray.d, wl) * env_weight(ray.d), clamp);
                 break;
             }
             Some(Hit::Panel { t, index }) => {
@@ -78,7 +89,7 @@ pub fn trace(scene: &Scene, mut ray: Ray, wl: &mut Wavelengths, s: &mut Sampler,
                         add_clamped(&mut l, beta * le, clamp);
                     } else {
                         let cos_l = (-ray.d).dot(panel.n).abs().max(1e-8);
-                        let p_light = scene.light_pick_pdf(index) * t * t / (cos_l * panel.area);
+                        let p_light = (1.0 - scene.env_pick) * scene.light_pick_pdf(index) * t * t / (cos_l * panel.area);
                         let w = prev_pdf * prev_pdf / (prev_pdf * prev_pdf + p_light * p_light);
                         add_clamped(&mut l, beta * le * w, clamp);
                     }
@@ -88,7 +99,7 @@ pub fn trace(scene: &Scene, mut ray: Ray, wl: &mut Wavelengths, s: &mut Sampler,
             Some(Hit::Floor { p, .. }) => {
                 let floor = scene.floor.as_ref().unwrap();
                 if s.next_random() >= floor.presence(p) {
-                    add_clamped(&mut l, beta * scene.env.eval(ray.d, wl), clamp);
+                    add_clamped(&mut l, beta * scene.env.eval(ray.d, wl) * env_weight(ray.d), clamp);
                     break;
                 }
                 let n = if ray.d.y < 0.0 { floor_n } else { -floor_n };
@@ -119,7 +130,26 @@ pub fn trace(scene: &Scene, mut ray: Ray, wl: &mut Wavelengths, s: &mut Sampler,
         if !bsdf.is_delta() {
             let ul = s.next();
             let (u1, u2) = s.next2();
-            if let Some((li, pick)) = scene.pick_light(ul) {
+            let env_map = scene.env_map().filter(|_| ul < scene.env_pick);
+            if let Some(m) = env_map {
+                let (dir, pdf_dir) = m.sample(u1, u2);
+                if pdf_dir > 0.0 && dir.dot(ngu) > 0.0 {
+                    let wi = frame.to_local(dir);
+                    let f = bsdf.eval(wo, wi);
+                    if !f.is_black() {
+                        let p_light = scene.env_pick * pdf_dir;
+                        let p_bsdf = bsdf.pdf(wo, wi);
+                        let w = p_light * p_light / (p_light * p_light + p_bsdf * p_bsdf);
+                        let vis = scene.sky_visibility(offset_origin(p, ngu, dir), dir);
+                        if vis > 0.0 {
+                            let le = m.eval(dir, wl);
+                            let c = beta * f * le * (wi.z.abs() * w * vis / p_light);
+                            add_clamped(&mut l, c, if rough_seen { Some(ps.clamp_indirect) } else { None });
+                        }
+                    }
+                }
+            } else if let Some((li, pick)) = scene.pick_light(if scene.env_pick > 0.0 { (ul - scene.env_pick) / (1.0 - scene.env_pick) } else { ul }) {
+                let pick = pick * (1.0 - scene.env_pick);
                 let panel = &scene.panels[li];
                 let lp = panel.sample_point(u1, u2);
                 let to = lp - p;

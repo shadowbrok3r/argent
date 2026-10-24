@@ -104,8 +104,8 @@ pub enum Env {
     /// Vertical gradient: `bottom` below the horizon, `horizon` at it, `top`
     /// overhead; `power` shapes the blend.
     Gradient { top: Arc<dyn Spectrum>, horizon: Arc<dyn Spectrum>, bottom: Arc<dyn Spectrum>, power: f32 },
-    /// Equirectangular HDR image (linear sRGB), +Y up, rotated by `rotation_deg`.
-    Image { width: u32, height: u32, texels: Arc<Vec<[f32; 3]>>, rotation_deg: f32, intensity: f32 },
+    /// Equirectangular HDR image with importance sampling.
+    Map(Arc<crate::envmap::EnvMap>),
 }
 
 impl Env {
@@ -121,16 +121,7 @@ impl Env {
                     Spec::lerp(t, horizon.sample(wl), bottom.sample(wl))
                 }
             }
-            Env::Image { width, height, texels, rotation_deg, intensity } => {
-                let d = crate::geom::rot_y(dir, -*rotation_deg);
-                let u = 0.5 + d.x.atan2(-d.z) / (2.0 * std::f32::consts::PI);
-                let v = d.y.clamp(-1.0, 1.0).acos() / std::f32::consts::PI;
-                let x = ((u * *width as f32) as u32).min(width - 1);
-                let y = ((v * *height as f32) as u32).min(height - 1);
-                let rgb = texels[(y * width + x) as usize];
-                let s = argent_spectra::RgbIlluminant::new([rgb[0] * intensity, rgb[1] * intensity, rgb[2] * intensity]);
-                s.sample(wl)
-            }
+            Env::Map(m) => m.eval(dir, wl),
         }
     }
 }
