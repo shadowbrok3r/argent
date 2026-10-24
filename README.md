@@ -41,6 +41,15 @@ argent --marker --detach turntable ring.stl -o out/reel.mp4            # backgro
 | **Forge-ready reels** | 1080×1920, 30 fps, h264 yuv420p with BT.709 tags, AAC 48 kHz, < 25 Mbps; `--qc` runs Forge's own checks. Hooks are burned in without breaking words. |
 | **CAD aware** | RingDesigner exports pair automatically: `ring.stl` brings `ring_stones.obj`, and each stone's gem comes from the `_stones.json` label. |
 
+## Live studio
+
+`argent serve` (installed as `argent-studio.service` on the tailnet address, port 8790) is a phone-first studio:
+open a piece from the library, drag to orbit, change metal, patina, polish, studio, HDRI, stones and grade, and
+watch the path-traced frame refine live (half-resolution frames at ~12 fps while you move, then progressive
+refinement, OIDN-denoised). Final stills, listing sheets and reels queue as jobs and land in
+`~/argent/out/studio`. The same set is a JSON + WebSocket API for agents: `crates/argent/src/serve/API.md`.
+It renders only while someone is looking: 45 s after the last request it idles.
+
 ## Layout
 
 | Crate | Does |
