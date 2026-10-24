@@ -1,6 +1,6 @@
 # argent test assets
 
-Real jewellery meshes for local render testing. Everything in `ringdesigner/` and `gems/` comes from Logan's own **RingDesigner** (github `shadowbrok3r/RingDesigner`, licensed `MIT OR Apache-2.0`, built from commit `006e043`): his authored showcase designs, exported here for local render testing. `test/` holds one third-party mesh (CC BY 4.0, attribution below). The repo's `.gitignore` excludes mesh files under `assets/` (`*.stl`, `*.glb`, `*.obj`, `*.ply`, `*.3mf`) except in `test/`.
+Real jewellery meshes for local render testing. Everything in `ringdesigner/` and `gems/` comes from Logan's own **RingDesigner** (github `shadowbrok3r/RingDesigner`, licensed `MIT OR Apache-2.0`, built from commit `006e043`): his authored showcase designs, exported here for local render testing. `test/` holds one third-party mesh (CC BY 4.0, attribution below). The repo's `.gitignore` excludes everything under `assets/` except this README and the exporter source, so none of these meshes are in git.
 
 ## Conventions (RingDesigner rings)
 
@@ -113,7 +113,6 @@ Copied from RingDesigner's `bundled/gems/*.obj`. Every file is headed `# CrossGe
 - **Defects:** 7 open edges and 5 non-manifold edges. The NIH page reports its WRL export as watertight.
 - **Units:** not stated. The bounding box is 2.38 × 3.57 × 3.32, probably inches. Rescale it to a ring head of about 15–20 mm on load.
 - **Purpose:** it stands in for the head of a skull ring.
-- **Git:** `test/` isn't gitignored, so `git add assets/` would commit this 11 MB file.
 
 ## How these were made
 
