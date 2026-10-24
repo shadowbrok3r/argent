@@ -147,7 +147,6 @@ pub fn with_companions(files: &[PathBuf]) -> Vec<PathBuf> {
         if let (Some(dir), Some(stem)) = (f.parent(), f.file_stem()) {
             let comp = dir.join(format!("{}_stones.obj", stem.to_string_lossy()));
             if comp.exists() && !out.contains(&comp) {
-                eprintln!("  + stones: {}", comp.display());
                 out.push(comp);
             }
         }
@@ -196,6 +195,9 @@ pub fn prepare(args: &PieceArgs) -> Result<Prepared> {
     };
     let opts = LoadOptions { unit_scale, ..Default::default() };
     let files = with_companions(&args.files);
+    for extra in files.iter().skip(args.files.len()) {
+        eprintln!("  + stones: {}", extra.display());
+    }
     let mesh = if files.len() == 1 {
         argent_mesh::load(&files[0], &opts)
     } else {
