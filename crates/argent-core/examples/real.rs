@@ -72,7 +72,13 @@ fn main() -> anyhow::Result<()> {
     let scene = p.scene(&look);
     let v = View::named(&view).unwrap();
     let cam = p.camera(&v, &Lens::default(), w as f32 / h as f32);
-    let q = Quality { width: w, height: h, spp, ..Default::default() };
+    let mut q = Quality { width: w, height: h, spp, ..Default::default() };
+    if let Ok(d) = std::env::var("ARGENT_MAXDEPTH") {
+        q.path.max_depth = d.parse().unwrap();
+    }
+    if std::env::var("ARGENT_NODENOISE").is_ok() {
+        q.denoise = false;
+    }
     let t2 = Instant::now();
     let img = render_image(&scene, &cam, &q, 1)?;
     println!("rendered {}x{} {} spp in {:.2?}", w, h, spp, t2.elapsed());

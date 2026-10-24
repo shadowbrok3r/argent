@@ -72,10 +72,31 @@ pub struct TriHit {
 #[derive(Clone)]
 pub struct Bvh {
     nodes: Vec<Node>,
+    /// The binary tree collapsed to 4-wide nodes for SIMD traversal.
+    wide: Vec<Node4>,
     tris: Vec<Tri>,
     /// BVH order → original triangle index.
     prim_ids: Vec<u32>,
 }
+
+/// Four children's boxes in structure-of-arrays form, tested at once.
+/// `child[i]`: interior → index into `wide`; leaf → `LEAF | first_tri`
+/// with the count in `count[i]`; empty slot → `EMPTY`.
+#[derive(Clone, Copy, Debug)]
+#[repr(C, align(64))]
+struct Node4 {
+    min_x: glam::Vec4,
+    min_y: glam::Vec4,
+    min_z: glam::Vec4,
+    max_x: glam::Vec4,
+    max_y: glam::Vec4,
+    max_z: glam::Vec4,
+    child: [u32; 4],
+    count: [u32; 4],
+}
+
+const LEAF: u32 = 1 << 31;
+const EMPTY: u32 = u32::MAX;
 
 const BINS: usize = 16;
 const MAX_LEAF: usize = 4;
@@ -120,7 +141,8 @@ impl Bvh {
                 Tri { v0, e1: p(t[1]) - v0, e2: p(t[2]) - v0 }
             })
             .collect();
-        Bvh { nodes: sub.nodes, tris, prim_ids: sub.prims }
+        let wide = collapse(&sub.nodes);
+        Bvh { nodes: sub.nodes, wide, tris, prim_ids: sub.prims }
     }
 
     pub fn bounds(&self) -> Aabb {
@@ -139,52 +161,52 @@ impl Bvh {
             return None;
         }
         let inv = V3::ONE / ray.d;
-        let neg = [ray.d.x < 0.0, ray.d.y < 0.0, ray.d.z < 0.0];
+        let (ox, oy, oz) = (glam::Vec4::splat(ray.o.x), glam::Vec4::splat(ray.o.y), glam::Vec4::splat(ray.o.z));
+        let (ix, iy, iz) = (glam::Vec4::splat(inv.x), glam::Vec4::splat(inv.y), glam::Vec4::splat(inv.z));
         let mut best_t = t_max;
         let mut best: Option<(u32, f32, f32)> = None;
-        let mut stack = [0u32; 64];
+        // (entry, t_near) pairs; entries are wide-node indices or LEAF-tagged ranges.
+        let mut stack: [(u32, u32, f32); 192] = [(0, 0, 0.0); 192];
         let mut sp = 0usize;
-        let mut idx = 0u32;
-        loop {
-            let node = &self.nodes[idx as usize];
-            if node.count > 0 {
-                let start = node.index as usize;
-                for i in start..start + node.count as usize {
+        stack[sp] = (0, 0, 0.0);
+        sp += 1;
+        while sp > 0 {
+            sp -= 1;
+            let (entry, count, tn) = stack[sp];
+            if tn > best_t {
+                continue;
+            }
+            if entry & LEAF != 0 {
+                let start = (entry & !LEAF) as usize;
+                for i in start..start + count as usize {
                     if let Some((t, u, v)) = tri_intersect(&self.tris[i], ray, best_t) {
                         best_t = t;
                         best = Some((i as u32, u, v));
                     }
                 }
-            } else {
-                let l = node.index;
-                let r = l + 1;
-                let tl = slab(&self.nodes[l as usize], ray, inv, best_t);
-                let tr = slab(&self.nodes[r as usize], ray, inv, best_t);
-                match (tl, tr) {
-                    (Some(a), Some(b)) => {
-                        let (first, second) = if a <= b { (l, r) } else { (r, l) };
-                        stack[sp] = second;
-                        sp += 1;
-                        idx = first;
-                        continue;
+                continue;
+            }
+            let n = &self.wide[entry as usize];
+            let (tmin, mask) = slab4(n, ox, oy, oz, ix, iy, iz, best_t);
+            // Push hit children far-to-near so the nearest pops first.
+            let mut order = [(0usize, 0f32); 4];
+            let mut k = 0;
+            for c in 0..4 {
+                if mask & (1 << c) != 0 {
+                    let t = tmin[c];
+                    let mut j = k;
+                    while j > 0 && order[j - 1].1 < t {
+                        order[j] = order[j - 1];
+                        j -= 1;
                     }
-                    (Some(_), None) => {
-                        idx = l;
-                        continue;
-                    }
-                    (None, Some(_)) => {
-                        idx = r;
-                        continue;
-                    }
-                    (None, None) => {}
+                    order[j] = (c, t);
+                    k += 1;
                 }
             }
-            let _ = neg;
-            if sp == 0 {
-                break;
+            for &(c, t) in &order[..k] {
+                stack[sp] = (n.child[c], n.count[c], t);
+                sp += 1;
             }
-            sp -= 1;
-            idx = stack[sp];
         }
         best.map(|(i, u, v)| TriHit { t: best_t, u, v, prim: self.prim_ids[i as usize] })
     }
@@ -196,43 +218,163 @@ impl Bvh {
             return false;
         }
         let inv = V3::ONE / ray.d;
-        let mut stack = [0u32; 64];
-        let mut sp = 0usize;
-        let mut idx = 0u32;
-        loop {
-            let node = &self.nodes[idx as usize];
-            if node.count > 0 {
-                let start = node.index as usize;
-                for i in start..start + node.count as usize {
+        let (ox, oy, oz) = (glam::Vec4::splat(ray.o.x), glam::Vec4::splat(ray.o.y), glam::Vec4::splat(ray.o.z));
+        let (ix, iy, iz) = (glam::Vec4::splat(inv.x), glam::Vec4::splat(inv.y), glam::Vec4::splat(inv.z));
+        let mut stack: [(u32, u32); 192] = [(0, 0); 192];
+        let mut sp = 1usize;
+        while sp > 0 {
+            sp -= 1;
+            let (entry, count) = stack[sp];
+            if entry & LEAF != 0 {
+                let start = (entry & !LEAF) as usize;
+                for i in start..start + count as usize {
                     if tri_intersect(&self.tris[i], ray, t_max).is_some() {
                         return true;
                     }
                 }
-            } else {
-                let l = node.index;
-                let r = l + 1;
-                let hl = slab(&self.nodes[l as usize], ray, inv, t_max).is_some();
-                let hr = slab(&self.nodes[r as usize], ray, inv, t_max).is_some();
-                if hl && hr {
-                    stack[sp] = r;
+                continue;
+            }
+            let n = &self.wide[entry as usize];
+            let (_, mask) = slab4(n, ox, oy, oz, ix, iy, iz, t_max);
+            for c in 0..4 {
+                if mask & (1 << c) != 0 {
+                    stack[sp] = (n.child[c], n.count[c]);
                     sp += 1;
-                    idx = l;
-                    continue;
-                } else if hl {
-                    idx = l;
-                    continue;
-                } else if hr {
-                    idx = r;
-                    continue;
                 }
             }
-            if sp == 0 {
-                return false;
-            }
-            sp -= 1;
-            idx = stack[sp];
         }
+        false
     }
+
+    /// Reference binary traversal (kept for tests).
+    #[cfg(test)]
+    fn intersect_binary(&self, ray: &Ray, t_max: f32) -> Option<TriHit> {
+        let inv = V3::ONE / ray.d;
+        let mut best_t = t_max;
+        let mut best: Option<(u32, f32, f32)> = None;
+        let mut stack = vec![0u32];
+        while let Some(idx) = stack.pop() {
+            let node = &self.nodes[idx as usize];
+            if slab(node, ray, inv, best_t).is_none() {
+                continue;
+            }
+            if node.count > 0 {
+                let start = node.index as usize;
+                for i in start..start + node.count as usize {
+                    if let Some((t, u, v)) = tri_intersect(&self.tris[i], ray, best_t) {
+                        best_t = t;
+                        best = Some((i as u32, u, v));
+                    }
+                }
+            } else {
+                stack.push(node.index);
+                stack.push(node.index + 1);
+            }
+        }
+        best.map(|(i, u, v)| TriHit { t: best_t, u, v, prim: self.prim_ids[i as usize] })
+    }
+}
+
+#[inline(always)]
+#[allow(clippy::too_many_arguments)]
+fn slab4(
+    n: &Node4,
+    ox: glam::Vec4,
+    oy: glam::Vec4,
+    oz: glam::Vec4,
+    ix: glam::Vec4,
+    iy: glam::Vec4,
+    iz: glam::Vec4,
+    t_max: f32,
+) -> (glam::Vec4, u32) {
+    let tx0 = (n.min_x - ox) * ix;
+    let tx1 = (n.max_x - ox) * ix;
+    let ty0 = (n.min_y - oy) * iy;
+    let ty1 = (n.max_y - oy) * iy;
+    let tz0 = (n.min_z - oz) * iz;
+    let tz1 = (n.max_z - oz) * iz;
+    let tmin = tx0.min(tx1).max(ty0.min(ty1)).max(tz0.min(tz1)).max(glam::Vec4::ZERO);
+    let tmax = tx0.max(tx1).min(ty0.max(ty1)).min(tz0.max(tz1)).min(glam::Vec4::splat(t_max));
+    (tmin, tmin.cmple(tmax).bitmask())
+}
+
+/// Collapse a binary BVH into 4-wide nodes: each wide node takes up to four
+/// descendants by repeatedly opening its largest interior child.
+fn collapse(nodes: &[Node]) -> Vec<Node4> {
+    let mut wide: Vec<Node4> = Vec::with_capacity(nodes.len() / 2 + 1);
+    fn area(n: &Node) -> f32 {
+        let e = [n.max[0] - n.min[0], n.max[1] - n.min[1], n.max[2] - n.min[2]];
+        e[0] * e[1] + e[1] * e[2] + e[2] * e[0]
+    }
+    // Root: if it's a leaf, wrap it as a single child.
+    fn build(nodes: &[Node], root: u32, wide: &mut Vec<Node4>) -> u32 {
+        let me = wide.len() as u32;
+        wide.push(Node4 {
+            min_x: glam::Vec4::splat(f32::INFINITY),
+            min_y: glam::Vec4::splat(f32::INFINITY),
+            min_z: glam::Vec4::splat(f32::INFINITY),
+            max_x: glam::Vec4::splat(f32::NEG_INFINITY),
+            max_y: glam::Vec4::splat(f32::NEG_INFINITY),
+            max_z: glam::Vec4::splat(f32::NEG_INFINITY),
+            child: [EMPTY; 4],
+            count: [0; 4],
+        });
+        let r = &nodes[root as usize];
+        let mut kids: Vec<u32> = if r.count > 0 { vec![root] } else { vec![r.index, r.index + 1] };
+        while kids.len() < 4 {
+            // Open the interior child with the largest surface area.
+            let mut best: Option<(usize, f32)> = None;
+            for (i, &k) in kids.iter().enumerate() {
+                let n = &nodes[k as usize];
+                if n.count == 0 {
+                    let a = area(n);
+                    if best.is_none_or(|b| a > b.1) {
+                        best = Some((i, a));
+                    }
+                }
+            }
+            let Some((i, _)) = best else { break };
+            let n = nodes[kids[i] as usize];
+            kids.swap_remove(i);
+            kids.push(n.index);
+            kids.push(n.index + 1);
+        }
+        let mut node = wide[me as usize];
+        let mut mins = [[f32::INFINITY; 4]; 3];
+        let mut maxs = [[f32::NEG_INFINITY; 4]; 3];
+        for (c, &k) in kids.iter().enumerate() {
+            let n = nodes[k as usize];
+            for a in 0..3 {
+                mins[a][c] = n.min[a];
+                maxs[a][c] = n.max[a];
+            }
+            if n.count > 0 {
+                node.child[c] = LEAF | n.index;
+                node.count[c] = n.count;
+            } else {
+                node.child[c] = u32::MAX - 1; // placeholder, patched below
+            }
+        }
+        node.min_x = glam::Vec4::from_array(mins[0]);
+        node.min_y = glam::Vec4::from_array(mins[1]);
+        node.min_z = glam::Vec4::from_array(mins[2]);
+        node.max_x = glam::Vec4::from_array(maxs[0]);
+        node.max_y = glam::Vec4::from_array(maxs[1]);
+        node.max_z = glam::Vec4::from_array(maxs[2]);
+        wide[me as usize] = node;
+        for (c, &k) in kids.iter().enumerate() {
+            if nodes[k as usize].count == 0 {
+                let w = build(nodes, k, wide);
+                wide[me as usize].child[c] = w;
+            }
+        }
+        me
+    }
+    if nodes.is_empty() {
+        return wide;
+    }
+    build(nodes, 0, &mut wide);
+    wide
 }
 
 #[inline(always)]
@@ -442,6 +584,8 @@ mod tests {
             let d = V3::new(rnd() - 0.5, -1.0, rnd() - 0.5).normalize();
             let ray = Ray::new(o, d);
             let a = bvh.intersect(&ray, f32::INFINITY).map(|h| h.t);
+            let a2 = bvh.intersect_binary(&ray, f32::INFINITY).map(|h| h.t);
+            assert_eq!(a.is_some(), a2.is_some());
             let b = brute(&p, &t, &ray);
             match (a, b) {
                 (Some(x), Some(y)) => assert!((x - y).abs() < 1e-4, "{x} vs {y}"),

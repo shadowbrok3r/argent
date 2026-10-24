@@ -21,11 +21,11 @@ fn emitter(kelvin: f32, intensity: f32) -> Arc<dyn Spectrum> {
     }
     let bb = Blackbody::new(kelvin);
     let y = argent_spectra::spectrum::luminance_y(&bb).max(1e-9);
-    Arc::new(Scaled(bb, intensity / y))
+    crate::tab::bake(Arc::new(Scaled(bb, intensity / y)))
 }
 
 fn rgb_spec(v: [f32; 3]) -> Arc<dyn Spectrum> {
-    Arc::new(argent_spectra::RgbIlluminant::new(v))
+    crate::tab::bake(Arc::new(argent_spectra::RgbIlluminant::new(v)))
 }
 
 pub struct StudioRig {

@@ -1,0 +1,10 @@
+[Unit]
+Description=argent: pull the studio desktop's jewelry library and render a catalog
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=%h/argent/scripts/desktop-catalog.sh
+Nice=19
+CPUSchedulingPolicy=idle
+IOSchedulingClass=idle

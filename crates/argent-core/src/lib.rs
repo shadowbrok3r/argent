@@ -17,6 +17,7 @@ pub mod sampler;
 pub mod scene;
 pub mod shot;
 pub mod studio;
+pub mod tab;
 pub mod views;
 
 pub(crate) use material::guide_rgb as spectral_rgb_guide;

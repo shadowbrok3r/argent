@@ -7,6 +7,9 @@ pub struct Sampler {
     seed: u32,
     dim: u32,
     rng: u64,
+    /// Cached 4-dimension block (Sobol is evaluated four dims at a time).
+    block: [f32; 4],
+    block_set: u32,
 }
 
 const MAX_SOBOL_DIM: u32 = sobol_burley::NUM_DIMENSIONS;
@@ -30,6 +33,8 @@ impl Sampler {
             seed: pixel_seed,
             dim: 0,
             rng: ((pixel_seed as u64) << 32 | sample_index as u64) ^ 0x9e37_79b9_7f4a_7c15,
+            block: [0.0; 4],
+            block_set: u32::MAX,
         }
     }
 
@@ -38,7 +43,12 @@ impl Sampler {
         let d = self.dim;
         self.dim += 1;
         if d < MAX_SOBOL_DIM && self.index < (1 << 16) {
-            sobol_burley::sample(self.index, d, self.seed).min(0.999_999_94)
+            let set = d / 4;
+            if set != self.block_set {
+                self.block = sobol_burley::sample_4d(self.index, set, self.seed);
+                self.block_set = set;
+            }
+            self.block[(d % 4) as usize].min(0.999_999_94)
         } else {
             self.next_random()
         }

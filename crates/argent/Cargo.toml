@@ -22,3 +22,7 @@ glam.workspace = true
 parking_lot.workspace = true
 clap = { version = "4.6.7", features = ["derive"] }
 libc = "0.2"
+# Live studio (`argent serve`): HTTP + WebSocket server and fast preview JPEGs.
+axum = { version = "0.8.9", default-features = false, features = ["http1", "json", "query", "tokio", "ws"] }
+tokio = { version = "1.54.1", features = ["rt-multi-thread", "net", "sync", "time", "macros", "signal"] }
+jpeg-encoder = { version = "0.7.1", features = ["simd"] }

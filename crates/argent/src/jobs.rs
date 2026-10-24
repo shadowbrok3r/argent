@@ -82,6 +82,16 @@ pub struct ShotArgs {
     pub max_depth: u32,
 }
 
+/// When set, print ZeroClaw delivery markers for final outputs.
+pub static MARKERS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+pub fn marker(kind: &str, path: &Path) {
+    if MARKERS.load(std::sync::atomic::Ordering::Relaxed) {
+        let abs = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+        println!("[{kind}:{}]", abs.display());
+    }
+}
+
 pub fn parse_size(s: &str) -> Result<(u32, u32)> {
     Ok(match s {
         "story" | "reel" | "vertical" => (1080, 1920),
@@ -361,6 +371,7 @@ pub fn render(args: &PieceArgs, shot: &ShotArgs, out: &Path, turn: f32) -> Resul
     let png = argent_post::develop(&img, &grade(&lk));
     write_image(out, &png)?;
     eprintln!("{} ({}×{}, {} spp) in {:.2?}", out.display(), q.width, q.height, q.spp, t.elapsed());
+    marker("IMAGE", out);
     Ok(())
 }
 
@@ -381,6 +392,7 @@ pub fn turntable(
     if qc {
         print_qc(out)?;
     }
+    marker("VIDEO", out);
     Ok(())
 }
 
@@ -484,7 +496,9 @@ pub struct SheetManifest {
 
 pub fn sheet(args: &PieceArgs, shot: &ShotArgs, out: &Path, metals: &[String], views: &[String], title: Option<String>) -> Result<SheetManifest> {
     let p = prepare(args)?;
-    sheet_prepared(&p, &piece_name(&args.files), shot, out, metals, views, title)
+    let m = sheet_prepared(&p, &piece_name(&args.files), shot, out, metals, views, title)?;
+    marker("IMAGE", &out.join(&m.contact_sheet));
+    Ok(m)
 }
 
 pub fn sheet_prepared(p: &Prepared, name: &str, shot: &ShotArgs, out: &Path, metals: &[String], views: &[String], title: Option<String>) -> Result<SheetManifest> {

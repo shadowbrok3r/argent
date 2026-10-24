@@ -1,0 +1,10 @@
+[Unit]
+Description=argent: try the desktop catalog every 10 minutes until today's run is done
+
+[Timer]
+OnBootSec=5min
+OnUnitInactiveSec=10min
+Persistent=false
+
+[Install]
+WantedBy=timers.target

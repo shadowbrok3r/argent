@@ -12,6 +12,9 @@ struct Cli {
     /// Render threads (default: all cores).
     #[arg(long, global = true)]
     threads: Option<usize>,
+    /// Print `[IMAGE:path]` / `[VIDEO:path]` as the last line (ZeroClaw delivery markers).
+    #[arg(long, global = true)]
+    marker: bool,
     #[command(subcommand)]
     cmd: Cmd,
 }
@@ -129,6 +132,9 @@ fn set_priority(p: &str) {
 pub fn run() -> Result<()> {
     let cli = Cli::parse();
     set_priority(&cli.priority);
+    if cli.marker {
+        crate::jobs::MARKERS.store(true, std::sync::atomic::Ordering::Relaxed);
+    }
     if let Some(n) = cli.threads {
         rayon::ThreadPoolBuilder::new().num_threads(n).build_global().ok();
     }

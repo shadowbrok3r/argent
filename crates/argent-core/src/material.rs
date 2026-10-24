@@ -54,13 +54,15 @@ impl Material {
         }
         let g = gems::get(name)?;
         let opaque_base: Option<Arc<dyn Spectrum>> = g.body_albedo.map(|c| Arc::new(RgbAlbedo::new(c)) as Arc<dyn Spectrum>);
-        Some(Material::Gem { ior: Arc::from(g.ior), absorption: Arc::from(g.absorption), kind: g.kind, opaque_base })
+        let ior: Arc<dyn Spectrum> = Arc::from(g.ior);
+        let absorption: Arc<dyn Spectrum> = Arc::from(g.absorption);
+        Some(Material::Gem { ior: crate::tab::bake(ior), absorption: crate::tab::bake(absorption), kind: g.kind, opaque_base })
     }
 
     /// Black opal (dark body, vivid flashes) or white opal (milky body).
     pub fn opal(black: bool, cell_mm: f32) -> Material {
         let body = if black { [0.012, 0.012, 0.018] } else { [0.55, 0.58, 0.62] };
-        Material::Opal { body: Arc::new(RgbAlbedo::new(body)), cell_mm, strength: if black { 1.0 } else { 0.7 } }
+        Material::Opal { body: crate::tab::bake(Arc::new(RgbAlbedo::new(body))), cell_mm, strength: if black { 1.0 } else { 0.7 } }
     }
 
     /// True when rays pass through (two-sided shading must not flip normals).
@@ -69,11 +71,11 @@ impl Material {
     }
 
     pub fn plastic(rgb: [f32; 3], eta: f32, roughness: f32) -> Material {
-        Material::Plastic { base: Arc::new(RgbAlbedo::new(rgb)), eta, ggx: Ggx::from_roughness(roughness) }
+        Material::Plastic { base: crate::tab::bake(Arc::new(RgbAlbedo::new(rgb))), eta, ggx: Ggx::from_roughness(roughness) }
     }
 
     pub fn diffuse(rgb: [f32; 3]) -> Material {
-        Material::Diffuse { albedo: Arc::new(RgbAlbedo::new(rgb)) }
+        Material::Diffuse { albedo: crate::tab::bake(Arc::new(RgbAlbedo::new(rgb))) }
     }
 
     /// True for gems: shade with facet (geometric) normals so facets stay crisp.
@@ -143,7 +145,7 @@ pub fn default_patina(strength: f32, alloy: Alloy) -> Patina {
         Alloy::Bronze | Alloy::Brass | Alloy::Copper => Arc::new(RgbAlbedo::new([0.03, 0.016, 0.008])),
         _ => Arc::new(RgbAlbedo::new([0.03, 0.02, 0.01])),
     };
-    Patina { strength, lo: 0.18, hi: 0.62, base, ggx: Ggx::from_roughness(0.42), eta: 1.9 }
+    Patina { strength, lo: 0.18, hi: 0.62, base: crate::tab::bake(base), ggx: Ggx::from_roughness(0.42), eta: 1.9 }
 }
 
 pub fn constant(v: f32) -> Arc<dyn Spectrum> {
