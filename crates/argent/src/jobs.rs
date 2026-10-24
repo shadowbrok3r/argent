@@ -1100,7 +1100,7 @@ mod tests {
 
     #[test]
     fn real_track_drop() {
-        let p = Path::new("/home/shadowbroker/argent/library/audio/ES_Lone_Wolf-Toby_Tranter.mp3");
+        let p = Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../../library/audio/ES_Lone_Wolf-Toby_Tranter.mp3"));
         if !p.exists() {
             return;
         }
