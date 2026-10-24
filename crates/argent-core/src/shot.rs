@@ -36,7 +36,8 @@ pub struct Look {
     pub stones: Vec<StoneRule>,
     pub studio: Studio,
     pub exposure_ev: f32,
-    /// AgX look: `base`, `punchy` or `golden`.
+    /// Tone map: `neutral` (Khronos PBR Neutral, faithful product colour;
+    /// the default) or an AgX look: `punchy`, `base`, `golden`; or `aces`.
     pub grade: String,
     /// Light with a photographed environment (equirectangular .hdr) instead
     /// of the studio's softboxes; the studio's floor stays.
@@ -54,7 +55,7 @@ impl Default for Look {
             stones: vec![],
             studio: Studio::Noir,
             exposure_ev: 0.0,
-            grade: "punchy".into(),
+            grade: "neutral".into(),
             hdri: None,
             hdri_rotate: 0.0,
             hdri_exposure: 0.0,
@@ -414,17 +415,18 @@ pub fn render_image(scene: &Scene, cam: &Camera, q: &Quality, seed: u32) -> anyh
     )
 }
 
-/// The grade for a look. Marketplace listings want a pure white backdrop
-/// (sRGB ≈ 250+), which AgX deliberately never reaches, so the white studio
-/// uses Khronos PBR Neutral unless a look is asked for explicitly.
+/// The grade for a look. Khronos PBR Neutral is the default: it was made
+/// for e-commerce product renders and keeps metal colour (linear 24k gold
+/// lands at sRGB 241/205/146 where AgX Punchy gives a khaki 197/173/124),
+/// and it reaches the pure white a listing backdrop needs. The AgX looks
+/// stay available for a filmic grade.
 pub fn grade(look: &Look) -> argent_post::Grade {
     let tonemap = match look.grade.as_str() {
+        "punchy" | "agx" => argent_post::ToneMap::AgX(argent_post::AgxLook::Punchy),
         "base" => argent_post::ToneMap::AgX(argent_post::AgxLook::Base),
         "golden" => argent_post::ToneMap::AgX(argent_post::AgxLook::Golden),
-        "neutral" => argent_post::ToneMap::KhronosNeutral,
         "aces" => argent_post::ToneMap::AcesFitted,
-        "punchy" if look.studio == Studio::White && look.hdri.is_none() => argent_post::ToneMap::KhronosNeutral,
-        _ => argent_post::ToneMap::AgX(argent_post::AgxLook::Punchy),
+        _ => argent_post::ToneMap::KhronosNeutral,
     };
     argent_post::Grade { exposure_ev: look.exposure_ev, tonemap, saturation: 1.0 }
 }

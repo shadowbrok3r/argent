@@ -85,8 +85,8 @@ pub struct ShotArgs {
     /// Exposure compensation, EV.
     #[arg(long, default_value_t = 0.0)]
     pub exposure: f32,
-    /// AgX look: punchy, base, golden.
-    #[arg(long, default_value = "punchy")]
+    /// Tone map: neutral (faithful product colour, default), punchy/base/golden (AgX looks), aces.
+    #[arg(long, default_value = "neutral")]
     pub grade: String,
     #[arg(long)]
     pub no_denoise: bool,
