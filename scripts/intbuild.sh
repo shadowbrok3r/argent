@@ -3,14 +3,16 @@
 # edits included), with the studio server stubbed out so a half-edited
 # serve/ never blocks testing the renderer.
 set -euo pipefail
-rsync -a --delete --exclude target ~/argent/crates/ ~/argent-int/crates/
+# No -t: files whose content changed get a fresh mtime, so cargo always
+# notices them (preserved mtimes can be older than the last build's artifacts).
+rsync -rlpgoD --checksum --delete --exclude target ~/argent/crates/ ~/argent-int/crates/
 cp ~/argent/Cargo.toml ~/argent-int/Cargo.toml
 cp ~/argent/Cargo.lock ~/argent-int/Cargo.lock 2>/dev/null || true
 # Crates named in $PIN (space-separated) come from the last commit instead,
 # for when an agent is mid-edit there.
 for c in ${PIN:-}; do
   rm -rf ~/argent-int/crates/$c
-  git -C ~/argent archive HEAD crates/$c | tar -x -C ~/argent-int
+  git -C ~/argent archive HEAD crates/$c | tar -x -m -C ~/argent-int
 done
 rm -rf ~/argent-int/crates/argent/src/serve
 cat > ~/argent-int/crates/argent/src/serve.rs <<'RS'
