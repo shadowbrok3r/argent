@@ -14,11 +14,17 @@
 //! - [`orient::detect`] returns a pose; [`Mesh::apply_pose`] applies it.
 //! - [`cavity::patina_mask`] returns one value in `0..=1` per vertex.
 
+#![allow(clippy::needless_range_loop)]
+
 pub mod cavity;
 pub mod io;
 pub mod normals;
 pub mod orient;
+pub mod synth;
+mod util;
 pub mod weld;
+
+pub use io::{Format, LoadReport, load_with_report};
 
 use std::ops::Range;
 use std::path::{Path, PathBuf};
@@ -76,7 +82,8 @@ pub fn load_many(paths: &[PathBuf], opts: &LoadOptions) -> anyhow::Result<Mesh> 
         if m.parts.len() <= 1 {
             let n = m.triangles.len() as u32;
             let stem = p.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
-            m.parts = vec![Part { name: stem, triangles: 0..n, material: None }];
+            let material = m.parts.first().and_then(|q| q.material.clone());
+            m.parts = vec![Part { name: stem, triangles: 0..n, material }];
         }
         out.merge(m);
     }
