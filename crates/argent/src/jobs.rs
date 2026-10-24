@@ -21,8 +21,9 @@ pub struct PieceArgs {
     /// Keep the file's own orientation (only centre it).
     #[arg(long)]
     pub no_orient: bool,
-    /// Extra rotation after posing, degrees: "x,y,z".
-    #[arg(long)]
+    /// Extra rotation after posing: "x,y,z" degrees, or ordered axis steps
+    /// applied left to right, e.g. "z-90,y-90" (stand up, then face camera).
+    #[arg(long, allow_hyphen_values = true)]
     pub rotate: Option<String>,
     /// Turn the piece around (180° about the vertical) if it faces away.
     #[arg(long)]
@@ -139,6 +140,27 @@ fn parse_triple(s: &str) -> Result<[f32; 3]> {
     Ok([v[0], v[1], v[2]])
 }
 
+/// "x,y,z" Euler degrees, or axis steps like "z-90,y-90" applied in order.
+fn parse_rotation(s: &str) -> Result<[[f32; 3]; 3]> {
+    let s = s.trim();
+    if s.starts_with(|c: char| matches!(c.to_ascii_lowercase(), 'x' | 'y' | 'z')) {
+        let mut m = [[1.0f32, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]];
+        for step in s.split(',') {
+            let step = step.trim();
+            let (axis, deg) = step.split_at(1);
+            let deg: f32 = deg.trim_start_matches('=').parse().with_context(|| format!("bad rotation step {step}"))?;
+            let e = match axis.to_ascii_lowercase().as_str() {
+                "x" => [deg, 0.0, 0.0],
+                "y" => [0.0, deg, 0.0],
+                _ => [0.0, 0.0, deg],
+            };
+            m = mul(rot_matrix(e), m);
+        }
+        return Ok(m);
+    }
+    Ok(rot_matrix(parse_triple(s)?))
+}
+
 fn rot_matrix(deg: [f32; 3]) -> [[f32; 3]; 3] {
     let (sx, cx) = deg[0].to_radians().sin_cos();
     let (sy, cy) = deg[1].to_radians().sin_cos();
@@ -246,14 +268,14 @@ pub fn prepare(args: &PieceArgs) -> Result<Prepared> {
     };
     if args.rotate.is_some() || args.flip {
         let base = pose.unwrap_or_else(|| argent_mesh::orient::detect(&mesh).pose);
-        let mut extra = [0.0f32; 3];
+        let mut rot = [[1.0f32, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]];
         if let Some(r) = &args.rotate {
-            extra = parse_triple(r)?;
+            rot = parse_rotation(r)?;
         }
         if args.flip {
-            extra[1] += 180.0;
+            rot = mul(rot_matrix([0.0, 180.0, 0.0]), rot);
         }
-        pose = Some(Pose { center: base.center, rotation: mul(rot_matrix(extra), base.rotation) });
+        pose = Some(Pose { center: base.center, rotation: mul(rot, base.rotation) });
     }
     let chain = match args.chain.as_str() {
         "off" | "no" | "none" => None,
