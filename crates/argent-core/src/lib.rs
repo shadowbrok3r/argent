@@ -7,6 +7,7 @@
 pub mod bsdf;
 pub mod bvh;
 pub mod chain;
+pub mod color;
 pub mod camera;
 pub mod geom;
 pub mod integrator;

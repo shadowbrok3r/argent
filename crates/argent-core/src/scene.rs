@@ -53,6 +53,8 @@ pub struct Scene {
     /// Turntable angle: the piece is rotated this many degrees about +Y
     /// (through the origin); the studio stays put.
     pub turntable_deg: f32,
+    /// Camera white balance (XYZ of the white, Y = 1); `None` = D65.
+    pub white: Option<[f32; 3]>,
     /// Emitting panels and their selection CDF (by power).
     pub(crate) lights: Vec<usize>,
     pub(crate) light_cdf: Vec<f32>,
@@ -75,7 +77,7 @@ impl Hit {
 
 impl Scene {
     pub fn new(piece: std::sync::Arc<Piece>, materials: Vec<Material>, panels: Vec<Panel>, env: Env, floor: Option<Floor>) -> Scene {
-        let mut s = Scene { piece, materials, panels, env, floor, turntable_deg: 0.0, lights: vec![], light_cdf: vec![] };
+        let mut s = Scene { piece, materials, panels, env, floor, turntable_deg: 0.0, white: None, lights: vec![], light_cdf: vec![] };
         s.rebuild_lights();
         s
     }

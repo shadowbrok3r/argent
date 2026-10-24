@@ -71,6 +71,7 @@ pub fn render_pass(scene: &Scene, cam: &Camera, film: &mut Film, ps: &PathSettin
     let aspect_sx = 2.0 / w as f32;
     let aspect_sy = 2.0 / h as f32;
     let seed_h = hash32(seed ^ 0xa511_e9b3);
+    let cam_m = crate::color::camera_matrix(scene.white);
     film.color
         .par_chunks_mut(w as usize)
         .zip(film.albedo.par_chunks_mut(w as usize))
@@ -92,7 +93,7 @@ pub fn render_pass(scene: &Scene, cam: &Camera, film: &mut Film, ps: &PathSettin
                     let ray = cam.ray(sx, sy, lu, lv);
                     let mut g = Guides::default();
                     let l = trace(scene, ray, &mut wl, &mut s, ps, &mut g);
-                    let rgb = cie::xyz_to_linear_srgb(cie::to_xyz(l, &wl));
+                    let rgb = crate::color::to_rgb(&cam_m, cie::to_xyz(l, &wl));
                     if rgb.iter().all(|v| v.is_finite()) {
                         for c in 0..3 {
                             acc[c] += rgb[c];

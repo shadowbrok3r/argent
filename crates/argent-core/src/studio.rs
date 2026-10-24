@@ -36,6 +36,9 @@ pub struct StudioRig {
     pub floor: Option<(Material, f32, f32)>,
     /// Suggested exposure for this rig, EV.
     pub exposure_ev: f32,
+    /// Colour temperature the camera is white-balanced to (`None` keeps the
+    /// rig's own colour, e.g. ember's fire-and-ice contrast).
+    pub white_kelvin: Option<f32>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -108,6 +111,7 @@ impl Studio {
                 },
                 floor: Some((Material::plastic([0.003, 0.003, 0.0032], 1.49, 0.09), 40.0, 130.0)),
                 exposure_ev: 0.0,
+                white_kelvin: Some(5600.0),
             },
             Studio::White => StudioRig {
                 panels: vec![
@@ -130,6 +134,7 @@ impl Studio {
                 },
                 floor: Some((Material::diffuse([0.86, 0.86, 0.86]), 80.0, 260.0)),
                 exposure_ev: 0.0,
+                white_kelvin: Some(5800.0),
             },
             Studio::Velvet => StudioRig {
                 panels: vec![
@@ -145,6 +150,8 @@ impl Studio {
                 },
                 floor: Some((Material::diffuse([0.10, 0.012, 0.02]), 60.0, 200.0)),
                 exposure_ev: 0.0,
+                // Balanced cooler than the 3400 K key so the velvet stays warm.
+                white_kelvin: Some(4300.0),
             },
             Studio::Ember => StudioRig {
                 panels: vec![
@@ -161,6 +168,7 @@ impl Studio {
                 },
                 floor: Some((Material::plastic([0.004, 0.003, 0.003], 1.5, 0.12), 40.0, 150.0)),
                 exposure_ev: 0.0,
+                white_kelvin: None,
             },
             Studio::Window => StudioRig {
                 panels: vec![
@@ -176,6 +184,7 @@ impl Studio {
                 },
                 floor: Some((Material::plastic([0.30, 0.29, 0.28], 1.5, 0.35), 70.0, 220.0)),
                 exposure_ev: 0.0,
+                white_kelvin: Some(6500.0),
             },
         }
     }

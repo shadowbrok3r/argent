@@ -209,7 +209,9 @@ impl Prepared {
             materials.push(m);
             floor_at(self.floor_y - 0.005, materials.len() - 1, (a, b), self.radius)
         });
-        Scene::new(piece, materials, rig.panels, rig.env, floor)
+        let mut scene = Scene::new(piece, materials, rig.panels, rig.env, floor);
+        scene.white = rig.white_kelvin.map(crate::color::blackbody_white);
+        scene
     }
 
     /// Camera for a still.
