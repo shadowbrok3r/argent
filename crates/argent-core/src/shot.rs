@@ -214,9 +214,35 @@ impl Prepared {
         scene
     }
 
-    /// Camera for a still.
+    /// Camera for a still, focused on the nearest surface near the centre.
     pub fn camera(&self, view: &View, lens: &Lens, aspect: f32) -> Camera {
-        frame(&self.hull, view, lens, aspect)
+        let mut cam = frame(&self.hull, view, lens, aspect);
+        if cam.lens_radius > 0.0 {
+            self.autofocus(&mut cam, 0.0);
+        }
+        cam
+    }
+
+    /// Autofocus: probe the piece with a few rays around the frame centre
+    /// and focus on the nearest surface (the face, not the bounding box
+    /// centre). Leaves the focus alone when every probe misses.
+    pub fn autofocus(&self, cam: &mut Camera, turn_deg: f32) {
+        // Probes lean upward: a ring's head (the subject) sits in the upper
+        // half of a hero frame. The median keeps one near shoulder or a far
+        // bore wall from stealing focus.
+        let mut hits = vec![];
+        for (sx, sy) in [(0.0, 0.0), (0.0, 0.15), (0.0, 0.3), (0.12, 0.22), (-0.12, 0.22), (0.0, 0.42), (0.2, 0.1), (-0.2, 0.1)] {
+            let r = cam.ray(sx, sy, 0.5, 0.5);
+            let o = crate::geom::rot_y(r.o, -turn_deg);
+            let d = crate::geom::rot_y(r.d, -turn_deg);
+            if let Some(h) = self.piece.bvh.intersect(&crate::geom::Ray::new(o, d), f32::INFINITY) {
+                hits.push(h.t * d.dot(crate::geom::rot_y(cam.forward, -turn_deg)));
+            }
+        }
+        if !hits.is_empty() {
+            hits.sort_by(|a, b| a.total_cmp(b));
+            cam.focus_dist = hits[hits.len() / 2];
+        }
     }
 
     /// Camera that keeps the piece in frame for a full turn.
