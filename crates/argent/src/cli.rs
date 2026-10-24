@@ -109,6 +109,23 @@ enum Cmd {
         #[arg(long, default_value_t = 6.0)]
         seconds: f32,
     },
+    /// Web/AR model for Shopify's 3D product media: simplified GLB with PBR
+    /// metal, stones as glass, and the antique patina baked into vertex colour.
+    Glb {
+        #[command(flatten)]
+        piece: PieceArgs,
+        #[arg(short, long, default_value = "piece.glb")]
+        out: PathBuf,
+        #[arg(long, default_value = "sterling")]
+        metal: String,
+        #[arg(long, default_value_t = 0.8)]
+        patina: f32,
+        #[arg(long, default_value_t = 0.12)]
+        roughness: f32,
+        /// Triangle budget (Shopify recommends files under 15 MB).
+        #[arg(long, default_value_t = 150_000)]
+        triangles: u32,
+    },
     /// Lay existing images out as a captioned contact sheet.
     Montage {
         /// Images (PNG/JPEG); captions come from the file names.
@@ -176,6 +193,7 @@ pub fn run() -> Result<()> {
             jobs::batch(&dir, &out, &shot, &metals, &views, !no_turntable, seconds)
         }
         Cmd::Montage { images, out, columns, tile, title, subtitle } => jobs::montage(&images, &out, columns, tile, title, subtitle),
+        Cmd::Glb { piece, out, metal, patina, roughness, triangles } => jobs::glb(&piece, &out, &metal, patina, roughness, triangles),
         Cmd::Serve { host, port, library, out } => crate::serve::serve(&host, port, library, out),
     }
 }

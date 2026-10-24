@@ -919,6 +919,53 @@ fn chrono_like_now() -> String {
     out.map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string()).unwrap_or_default()
 }
 
+/// Shopify-ready GLB: the posed piece (glTF is +Y up, like the canonical
+/// pose), simplified, PBR metal in the alloy's measured colour, stones named
+/// by species so they export as coloured glass, patina in `COLOR_0`.
+pub fn glb(args: &PieceArgs, out: &Path, metal: &str, patina: f32, roughness: f32, triangles: u32) -> Result<()> {
+    let alloy = Alloy::from_name(metal).with_context(|| format!("unknown metal {metal}"))?;
+    let p = prepare(args)?;
+    let mut mesh = p.mesh.clone();
+    // Name each stone part by its species (sidecar labels/tints) so the
+    // exporter gives it a gem material instead of a clear default.
+    for part in &mut mesh.parts {
+        if let Some(r) = p.default_stones.iter().find(|r| argent_core::shot::glob(&r.part, &part.name)) {
+            part.material = Some(r.gem.clone());
+        }
+    }
+    let mask = p.piece.cavity.clone().filter(|m| m.len() == mesh.positions.len());
+    let tarnish = match alloy {
+        Alloy::Bronze | Alloy::Brass | Alloy::Copper => [0.03, 0.016, 0.008],
+        Alloy::Sterling | Alloy::FineSilver => [0.018, 0.018, 0.02],
+        _ => [0.03, 0.02, 0.01],
+    };
+    let opts = argent_export::GlbOptions {
+        target_triangles: triangles,
+        max_bytes: Some(15 * 1024 * 1024),
+        base_color: alloy.f0_srgb(),
+        roughness,
+        patina: mask.map(|m| (m, tarnish, patina)),
+        name: piece_name(&args.files),
+    };
+    if let Some(dir) = out.parent() {
+        if !dir.as_os_str().is_empty() {
+            std::fs::create_dir_all(dir)?;
+        }
+    }
+    let t = Instant::now();
+    let r = argent_export::export_glb(&mesh, &opts, out)?;
+    eprintln!(
+        "{} ({} → {} triangles, {:.2} MB, max deviation {:.3} mm) in {:.1?}",
+        out.display(),
+        r.triangles_in,
+        r.triangles_out,
+        r.bytes as f64 / 1_048_576.0,
+        r.max_deviation_mm,
+        t.elapsed()
+    );
+    Ok(())
+}
+
 /// Captioned contact sheet from existing images.
 pub fn montage(images: &[PathBuf], out: &Path, columns: u32, tile: u32, title: Option<String>, subtitle: Option<String>) -> Result<()> {
     let mut tiles = vec![];

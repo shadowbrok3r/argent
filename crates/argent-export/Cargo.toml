@@ -1,0 +1,12 @@
+[package]
+name = "argent-export"
+description = "Web/AR export: quadric-error simplification of casting meshes and a hand-rolled glTF 2.0 GLB writer (PBR metal, glass-like gems, baked patina) for Shopify 3D product media."
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+
+[dependencies]
+argent-mesh.workspace = true
+anyhow.workspace = true
+rayon.workspace = true
+serde_json.workspace = true

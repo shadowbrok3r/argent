@@ -14,6 +14,7 @@ argent-core.workspace = true
 argent-mesh.workspace = true
 argent-spectra.workspace = true
 argent-post.workspace = true
+argent-export.workspace = true
 anyhow.workspace = true
 serde.workspace = true
 serde_json.workspace = true

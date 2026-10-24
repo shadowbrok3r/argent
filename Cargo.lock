@@ -86,6 +86,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "argent-core",
+ "argent-export",
  "argent-mesh",
  "argent-post",
  "argent-spectra",
@@ -116,6 +117,16 @@ dependencies = [
  "serde",
  "serde_json",
  "sobol_burley",
+]
+
+[[package]]
+name = "argent-export"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "argent-mesh",
+ "rayon",
+ "serde_json",
 ]
 
 [[package]]
