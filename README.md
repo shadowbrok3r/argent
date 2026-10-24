@@ -14,6 +14,16 @@ argent batch ~/argent/library/jewelry-scan -o catalog/    # every piece, index.h
 argent serve                                               # live studio on :8790
 ```
 
+More:
+
+```sh
+argent turntable ring.stl --rig reveal --audio track.mp3 -o reel.mp4   # macro rack-focus dolly-out; the drop lands on the reveal
+argent turntable ring.stl --rig sweep -o glint.mp4                     # a strip light glides across the polish
+argent render ring.stl --hdri library/hdri/studio_small_08_2k.hdr --hdri-rotate 120
+argent render skull.ply --fit 26 --chain on --rotate z-90,y-90         # unknown units → 26 mm, upright, on a cable chain
+argent --marker --detach turntable ring.stl -o out/reel.mp4            # background job for agents; tail out/reel.mp4.log
+```
+
 ## What makes it jewelry-specific
 
 | | |
@@ -22,6 +32,10 @@ argent serve                                               # live studio on :879
 | **Antique finish** | Every piece gets a cavity mask (ambient occlusion + curvature) at load time. `--patina` blends a soft black tarnish into the recesses, polished highs stay bright: the liver-of-sulfur look of a hand-finished skull ring. |
 | **Real gems** | Sellmeier dispersion with hero-wavelength sampling, so diamonds throw spectral fire. Absorption spectra give sapphire, ruby, emerald and the rest their colour through the stone's depth. |
 | **Spectral opal** | Precious opal is diffraction, not pigment: each Voronoi domain is a lattice reflecting a narrow band at `λ = 2 d n cos θ`. Turn the piece and the flashes shift colour, as crushed opal really does. |
+| **Photographed light** | `--hdri` lights the piece with an equirectangular HDR (importance-sampled, MIS with the softboxes); rotating it moves every highlight. |
+| **Reels with timing** | Rigs: `turntable`, `reveal` (macro, rack focus, dolly out, turn), `sweep` (moving strip light). `--audio` finds the track's drop and lands it on the rig's main moment, as the studio PC does for Forge. |
+| **Pendants hang** | A procedural cable chain runs through the bail in a V (`--chain auto` for detected pendants). |
+| **Camera** | 100 mm macro on full frame, f/16 by default in mood studios with autofocus on the subject, sharp for listings; white balance follows each rig's strobes. |
 | **Studio rigs** | `noir` (brand: black, strip softboxes, black acrylic), `white` (listing: tent + black flags so polish keeps its edges), `velvet`, `ember` (underworld fire rims), `window`. Softboxes are feathered so highlights grade like real diffusion. |
 | **Auto-pose** | Finds a ring's finger hole and head, a pendant's bail and front, and frames the shot. `--flip`, `--rotate`, `--angle` override. |
 | **Forge-ready reels** | 1080×1920, 30 fps, h264 yuv420p with BT.709 tags, AAC 48 kHz, < 25 Mbps; `--qc` runs Forge's own checks. Hooks are burned in without breaking words. |
