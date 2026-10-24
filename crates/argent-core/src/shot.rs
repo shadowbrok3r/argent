@@ -358,11 +358,13 @@ pub struct Quality {
     pub spp: u32,
     pub path: PathSettings,
     pub denoise: bool,
+    /// Faster denoising for animation frames (OIDN balanced quality).
+    pub fast_denoise: bool,
 }
 
 impl Default for Quality {
     fn default() -> Self {
-        Quality { width: 1080, height: 1920, spp: 128, path: PathSettings::default(), denoise: true }
+        Quality { width: 1080, height: 1920, spp: 128, path: PathSettings::default(), denoise: true, fast_denoise: false }
     }
 }
 
@@ -376,20 +378,32 @@ pub fn render_image(scene: &Scene, cam: &Camera, q: &Quality, seed: u32) -> anyh
     }
     let albedo = film.albedo();
     let normal = film.normal();
-    argent_post::denoise(
+    // The guides are deterministic first-hit buffers (only AA/DOF jitter),
+    // so OIDN's aux prefilter passes buy nothing: 1.37 s → 0.48 s at 2 MP.
+    let opts = argent_post::denoise::DenoiseOptions {
+        prefilter_aux: false,
+        quality: if q.fast_denoise { argent_post::denoise::DenoiseQuality::Balanced } else { argent_post::denoise::DenoiseQuality::High },
+    };
+    argent_post::denoise::denoise_with(
         argent_post::DenoiseInput { color: &color, albedo: Some(&albedo), normal: Some(&normal) },
         argent_post::DenoiseBackend::Auto,
+        &opts,
     )
 }
 
-/// The grade for a look.
+/// The grade for a look. Marketplace listings want a pure white backdrop
+/// (sRGB ≈ 250+), which AgX deliberately never reaches, so the white studio
+/// uses Khronos PBR Neutral unless a look is asked for explicitly.
 pub fn grade(look: &Look) -> argent_post::Grade {
-    let lk = match look.grade.as_str() {
-        "base" => argent_post::AgxLook::Base,
-        "golden" => argent_post::AgxLook::Golden,
-        _ => argent_post::AgxLook::Punchy,
+    let tonemap = match look.grade.as_str() {
+        "base" => argent_post::ToneMap::AgX(argent_post::AgxLook::Base),
+        "golden" => argent_post::ToneMap::AgX(argent_post::AgxLook::Golden),
+        "neutral" => argent_post::ToneMap::KhronosNeutral,
+        "aces" => argent_post::ToneMap::AcesFitted,
+        "punchy" if look.studio == Studio::White && look.hdri.is_none() => argent_post::ToneMap::KhronosNeutral,
+        _ => argent_post::ToneMap::AgX(argent_post::AgxLook::Punchy),
     };
-    argent_post::Grade { exposure_ev: look.exposure_ev, tonemap: argent_post::ToneMap::AgX(lk), saturation: 1.0 }
+    argent_post::Grade { exposure_ev: look.exposure_ev, tonemap, saturation: 1.0 }
 }
 
 #[cfg(test)]

@@ -478,7 +478,15 @@ pub fn turntable(
 }
 
 pub fn print_qc(out: &Path) -> Result<bool> {
-    let r = argent_post::qc::forge_reel(out)?;
+    // Forge's full set (loudness, true peak, frozen frames) once there is a
+    // soundtrack; a silent reel would fail loudness until the studio PC adds one.
+    let has_track = std::process::Command::new("ffprobe")
+        .args(["-v", "error", "-select_streams", "a", "-show_entries", "stream=codec_name", "-of", "csv=p=0"])
+        .arg(out)
+        .output()
+        .map(|o| !o.stdout.is_empty())
+        .unwrap_or(false);
+    let r = if has_track && !is_silent(out) { argent_post::qc::forge_reel_full(out)? } else { argent_post::qc::forge_reel(out)? };
     println!("Forge QC: {}", if r.passed { "PASSED" } else { "FAILED" });
     for c in &r.checks {
         println!("  [{}] {} — {}", if c.ok { "ok" } else { "XX" }, c.check, c.detail);
@@ -549,6 +557,7 @@ pub fn render_reel(
         // Reels are seen moving: fewer samples per frame, the denoiser does the rest.
         q.spp = 32;
     }
+    q.fast_denoise = true;
     let n = (seconds * fps as f32).round().max(2.0) as u32;
     let aspect = q.width as f32 / q.height as f32;
     let lens0 = lens(shot);
@@ -700,17 +709,55 @@ fn cut_to_drop(track: &Path, len: f32, at: f32) -> Result<PathBuf> {
     let start = (drop - at).max(0.0);
     let out = std::env::temp_dir().join(format!("argent-audio-{}-{:.0}.m4a", std::process::id(), start * 1000.0));
     let fade = 0.8f32.min(len * 0.2);
+    let fades = format!("afade=t=in:st=0:d=0.05,afade=t=out:st={:.3}:d={fade:.3}", len - fade);
+    // Forge checks loudness (-14 LUFS integrated) and true peak (< -1 dBTP):
+    // measure the cut first, then normalize linearly to the target.
+    let measure = std::process::Command::new("ffmpeg")
+        .args(["-hide_banner", "-nostats", "-ss", &format!("{start:.3}"), "-t", &format!("{len:.3}"), "-i"])
+        .arg(track)
+        .args(["-af", &format!("{fades},loudnorm=I=-14:TP=-1.5:LRA=11:print_format=json"), "-f", "null", "-"])
+        .output()?;
+    let err = String::from_utf8_lossy(&measure.stderr);
+    let json = err.rfind('{').and_then(|a| err[a..].find('}').map(|b| &err[a..a + b + 1]));
+    let field = |k: &str| -> Option<String> {
+        let v: serde_json::Value = serde_json::from_str(json?).ok()?;
+        v.get(k)?.as_str().map(str::to_string)
+    };
+    let norm = match (field("input_i"), field("input_tp"), field("input_lra"), field("input_thresh"), field("target_offset")) {
+        (Some(i), Some(tp), Some(lra), Some(th), Some(off)) => format!(
+            ",loudnorm=I=-14:TP=-1.5:LRA=11:measured_I={i}:measured_TP={tp}:measured_LRA={lra}:measured_thresh={th}:offset={off}:linear=true"
+        ),
+        _ => ",loudnorm=I=-14:TP=-1.5:LRA=11".into(),
+    };
     let status = std::process::Command::new("ffmpeg")
         .args(["-hide_banner", "-loglevel", "error", "-y", "-ss", &format!("{start:.3}"), "-t", &format!("{len:.3}"), "-i"])
         .arg(track)
-        .args(["-af", &format!("afade=t=in:st=0:d=0.05,afade=t=out:st={:.3}:d={fade:.3}", len - fade), "-c:a", "aac", "-b:a", "192k", "-ar", "48000"])
+        .args(["-af", &format!("{fades}{norm},aresample=48000"), "-c:a", "aac", "-b:a", "192k", "-ar", "48000"])
         .arg(&out)
         .status()?;
     if !status.success() {
         bail!("ffmpeg cut failed");
     }
-    eprintln!("  audio: drop at {drop:.2}s lands at {at:.2}s of the reel (track from {start:.2}s)");
+    eprintln!("  audio: drop at {drop:.2}s lands at {at:.2}s of the reel (track from {start:.2}s), normalized to -14 LUFS");
     Ok(out)
+}
+
+/// True when the reel's audio track is digital silence (argent's default).
+fn is_silent(path: &Path) -> bool {
+    let out = std::process::Command::new("ffmpeg")
+        .args(["-hide_banner", "-nostats", "-i"])
+        .arg(path)
+        .args(["-af", "volumedetect", "-vn", "-f", "null", "-"])
+        .output();
+    match out {
+        Ok(o) => String::from_utf8_lossy(&o.stderr)
+            .lines()
+            .find_map(|l| l.split("max_volume:").nth(1))
+            .and_then(|v| v.trim().trim_end_matches(" dB").parse::<f32>().ok())
+            .map(|db| db < -80.0)
+            .unwrap_or(true),
+        Err(_) => true,
+    }
 }
 
 /// Burned-in hook: full opacity for 1.6 s, fading out by 2.2 s.
@@ -722,9 +769,9 @@ pub fn hook_overlay(frame: &mut Rgb8, text: &str, t: f32) {
     crate::jobs::overlay_text(frame, text, alpha);
 }
 
-#[allow(unused_variables)]
 fn overlay_text(frame: &mut Rgb8, text: &str, alpha: f32) {
-    // Wired to argent_post::sheet::overlay_hook once it lands.
+    let style = argent_post::sheet::HookStyle { opacity: alpha, ..Default::default() };
+    argent_post::sheet::overlay_hook(frame, text, &style);
 }
 
 #[derive(Serialize)]
