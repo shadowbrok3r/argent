@@ -15,6 +15,10 @@ struct Cli {
     /// Print `[IMAGE:path]` / `[VIDEO:path]` as the last line (ZeroClaw delivery markers).
     #[arg(long, global = true)]
     marker: bool,
+    /// Run in the background: return at once, write progress and the final
+    /// marker to `<out>.log` (for agents whose shell calls time out).
+    #[arg(long, global = true)]
+    detach: bool,
     #[command(subcommand)]
     cmd: Cmd,
 }
@@ -135,6 +139,9 @@ fn set_priority(p: &str) {
 
 pub fn run() -> Result<()> {
     let cli = Cli::parse();
+    if cli.detach {
+        return detach();
+    }
     set_priority(&cli.priority);
     if cli.marker {
         crate::jobs::MARKERS.store(true, std::sync::atomic::Ordering::Relaxed);
@@ -154,4 +161,41 @@ pub fn run() -> Result<()> {
         }
         Cmd::Serve { host, port, library, out } => crate::serve::serve(&host, port, library, out),
     }
+}
+
+/// Re-launch this command without `--detach` in its own session, logging to
+/// `<out>.log`, and return immediately.
+fn detach() -> Result<()> {
+    use std::os::unix::process::CommandExt;
+    let args: Vec<String> = std::env::args().skip(1).filter(|a| a != "--detach").collect();
+    // Find the output path (-o/--out) to put the log beside it.
+    let mut out: Option<String> = None;
+    for (i, a) in args.iter().enumerate() {
+        if a == "-o" || a == "--out" {
+            out = args.get(i + 1).cloned();
+        } else if let Some(v) = a.strip_prefix("--out=") {
+            out = Some(v.to_string());
+        }
+    }
+    let out = out.unwrap_or_else(|| "argent-job".into());
+    let log = format!("{out}.log");
+    if let Some(dir) = std::path::Path::new(&log).parent() {
+        if !dir.as_os_str().is_empty() {
+            std::fs::create_dir_all(dir)?;
+        }
+    }
+    let f = std::fs::File::create(&log)?;
+    let exe = std::env::current_exe()?;
+    let mut cmd = std::process::Command::new(exe);
+    cmd.args(&args).stdin(std::process::Stdio::null()).stdout(f.try_clone()?).stderr(f);
+    unsafe {
+        cmd.pre_exec(|| {
+            libc::setsid();
+            Ok(())
+        });
+    }
+    let child = cmd.spawn()?;
+    println!("started job {} → {out}", child.id());
+    println!("progress: tail -2 {log}   (the last line becomes the [IMAGE:…]/[VIDEO:…] marker when --marker is set)");
+    Ok(())
 }

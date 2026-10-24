@@ -20,7 +20,8 @@ on this box's 32 CPU cores at low priority, so it never touches the GPUs ComfyUI
 OUT=/home/shadowbroker/.zeroclaw/agents/comfy/workspace/renders/argent
 argent --marker render FILE --metal gold14k --studio noir --view hero -o $OUT/LABEL.png
 argent --marker render FILE --metal sterling --patina 0.9 --studio white --size listing -o $OUT/LABEL.png
-argent --marker turntable FILE --metal gold14k --hook "Death had a name: Thanatos" --qc -o $OUT/LABEL.mp4
+argent --marker --detach turntable FILE --metal gold14k --hook "Death had a name: Thanatos" --qc -o $OUT/LABEL.mp4
+tail -2 $OUT/LABEL.mp4.log      # later: progress, then the [VIDEO:...] line when it is done
 argent --marker sheet FILE --metals sterling,gold14k,rose14k,bronze --views hero,front,side,top -o $OUT/LABEL
 ```
 - The last line printed is the attachment, `[IMAGE:...]` or `[VIDEO:...]`. Copy it exactly, first, in the reply.
@@ -36,7 +37,10 @@ argent --marker sheet FILE --metals sterling,gold14k,rose14k,bronze --views hero
   sapphire, ruby, emerald, amethyst, citrine, peridot, garnet, opal, black_opal, onyx and more (`argent render
   --stone x=?` lists them).
 - Sizes: `story` 1080x1920 (default), `listing` 2000x2000, `square` 2048x2048, `wide` 1920x1080, or `WxH`.
-- Time on this box: a 1080x1920 still at 128 spp ≈ 15–25 s; a 6 s reel ≈ 8–15 min (tell him before starting one).
+- Time on this box: a 1080x1920 still at 128 spp ≈ 15–25 s; a 6 s reel ≈ 8–15 min. Reels always go through
+  `--detach` (your shell call would time out): say it started, check the log on a later turn, then deliver.
+- Reel motion: `--rig turntable` (full turn), `reveal` (macro rack-focus dolly-out, then a turn), `sweep` (a strip
+  light glides across). `--audio TRACK` lands the track's drop on the rig's main moment.
 
 ## Forge
 A turntable reel from `argent turntable` meets Forge's reel spec (1080x1920, 30 fps, h264 yuv420p, AAC 48 kHz,
