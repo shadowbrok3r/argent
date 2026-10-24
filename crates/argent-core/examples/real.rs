@@ -71,7 +71,8 @@ fn main() -> anyhow::Result<()> {
     let look = Look { metal, studio, ..Default::default() };
     let scene = p.scene(&look);
     let v = View::named(&view).unwrap();
-    let cam = p.camera(&v, &Lens::default(), w as f32 / h as f32);
+    let fstop: f32 = std::env::var("ARGENT_FSTOP").ok().and_then(|s| s.parse().ok()).unwrap_or(0.0);
+    let cam = p.camera(&v, &Lens { focal_mm: 100.0, f_stop: fstop }, w as f32 / h as f32);
     let mut q = Quality { width: w, height: h, spp, ..Default::default() };
     if let Ok(d) = std::env::var("ARGENT_MAXDEPTH") {
         q.path.max_depth = d.parse().unwrap();

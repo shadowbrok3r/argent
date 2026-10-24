@@ -70,9 +70,10 @@ pub struct ShotArgs {
     /// Lens focal length (mm, full frame).
     #[arg(long, default_value_t = 100.0)]
     pub focal: f32,
-    /// f-number for depth of field (0 = everything sharp).
-    #[arg(long, default_value_t = 0.0)]
-    pub fstop: f32,
+    /// f-number for depth of field (0 = everything sharp). Default: f/16 for
+    /// mood studios, sharp for the white listing studio and sheets.
+    #[arg(long)]
+    pub fstop: Option<f32>,
     /// Exposure compensation, EV.
     #[arg(long, default_value_t = 0.0)]
     pub exposure: f32,
@@ -284,7 +285,8 @@ pub fn quality(shot: &ShotArgs) -> Result<Quality> {
 }
 
 fn lens(shot: &ShotArgs) -> Lens {
-    Lens { focal_mm: shot.focal, f_stop: shot.fstop }
+    let default = if Studio::from_name(&shot.studio) == Some(Studio::White) { 0.0 } else { 16.0 };
+    Lens { focal_mm: shot.focal, f_stop: shot.fstop.unwrap_or(default) }
 }
 
 pub fn write_image(path: &Path, img: &Rgb8) -> Result<()> {
@@ -608,6 +610,10 @@ pub fn sheet_prepared(p: &Prepared, name: &str, shot: &ShotArgs, out: &Path, met
     let mut shot = shot.clone();
     if shot.size == "1080x1920" {
         shot.size = "1600x1600".into();
+    }
+    // Listing images are focus-stacked in real studios: keep everything sharp.
+    if shot.fstop.is_none() {
+        shot.fstop = Some(0.0);
     }
     let q = quality(&shot)?;
     let mut tiles = vec![];
