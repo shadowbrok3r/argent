@@ -276,23 +276,28 @@ impl Prepared {
 }
 
 /// Environment maps are slow to load and build (≈0.2 s for 2K); keep the
-/// last few by (path, exposure, rotation).
+/// last few by (path, exposure). Rotation is applied at lookup, so turning
+/// the environment costs nothing.
 fn cached_envmap(path: &str, exposure: f32, rotate: f32) -> anyhow::Result<Arc<crate::envmap::EnvMap>> {
     use parking_lot::Mutex;
     use std::sync::OnceLock;
-    static CACHE: OnceLock<Mutex<Vec<(String, u32, u32, Arc<crate::envmap::EnvMap>)>>> = OnceLock::new();
+    type Entry = (String, u32, Arc<crate::envmap::EnvData>);
+    static CACHE: OnceLock<Mutex<Vec<Entry>>> = OnceLock::new();
     let cache = CACHE.get_or_init(|| Mutex::new(vec![]));
-    let key = (path.to_string(), exposure.to_bits(), rotate.to_bits());
-    if let Some(hit) = cache.lock().iter().find(|e| e.0 == key.0 && e.1 == key.1 && e.2 == key.2) {
-        return Ok(hit.3.clone());
-    }
-    let m = crate::envmap::EnvMap::load(std::path::Path::new(path), exposure, rotate)?;
-    let mut c = cache.lock();
-    if c.len() >= 3 {
-        c.remove(0);
-    }
-    c.push((key.0, key.1, key.2, m.clone()));
-    Ok(m)
+    let found = cache.lock().iter().find(|e| e.0 == path && e.1 == exposure.to_bits()).map(|e| e.2.clone());
+    let data = match found {
+        Some(d) => d,
+        None => {
+            let d = crate::envmap::EnvData::load(std::path::Path::new(path), exposure)?;
+            let mut c = cache.lock();
+            if c.len() >= 3 {
+                c.remove(0);
+            }
+            c.push((path.to_string(), exposure.to_bits(), d.clone()));
+            d
+        }
+    };
+    Ok(Arc::new(crate::envmap::EnvMap { data, rotation_deg: rotate }))
 }
 
 /// Find a gem name in free text ("Shoulder emerald / 25 degrees" → emerald).

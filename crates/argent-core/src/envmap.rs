@@ -104,9 +104,8 @@ fn inv3(m: [[f32; 3]; 3]) -> [[f32; 3]; 3] {
     ]
 }
 
-/// An equirectangular environment, pre-converted to basis weights, with a
-/// 2D sampling distribution.
-pub struct EnvMap {
+/// The image data and its sampling tables (independent of rotation).
+pub struct EnvData {
     pub width: u32,
     pub height: u32,
     weights: Vec<[f32; 3]>,
@@ -115,11 +114,31 @@ pub struct EnvMap {
     conditional: Vec<f32>,
     /// Integral of the sampling function, for pdfs.
     total: f32,
+}
+
+/// An equirectangular environment, pre-converted to basis weights, with a
+/// 2D sampling distribution, turned `rotation_deg` about +Y.
+#[derive(Clone)]
+pub struct EnvMap {
+    pub data: Arc<EnvData>,
     pub rotation_deg: f32,
+}
+
+impl std::ops::Deref for EnvMap {
+    type Target = EnvData;
+    fn deref(&self) -> &EnvData {
+        &self.data
+    }
 }
 
 impl EnvMap {
     pub fn load(path: &Path, exposure_ev: f32, rotation_deg: f32) -> anyhow::Result<Arc<EnvMap>> {
+        Ok(Arc::new(EnvMap { data: EnvData::load(path, exposure_ev)?, rotation_deg }))
+    }
+}
+
+impl EnvData {
+    pub fn load(path: &Path, exposure_ev: f32) -> anyhow::Result<Arc<EnvData>> {
         let img = image::open(path)?.to_rgb32f();
         let (w, h) = (img.width(), img.height());
         let k = 2f32.powf(exposure_ev);
@@ -154,8 +173,11 @@ impl EnvMap {
         for v in &mut marginal {
             *v /= acc;
         }
-        Ok(Arc::new(EnvMap { width: w, height: h, weights, marginal, conditional, total, rotation_deg }))
+        Ok(Arc::new(EnvData { width: w, height: h, weights, marginal, conditional, total }))
     }
+}
+
+impl EnvMap {
 
     #[inline]
     fn uv(&self, dir: V3) -> (f32, f32) {
