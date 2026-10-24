@@ -10,6 +10,7 @@
 
 pub mod alloys;
 pub mod cie;
+mod data;
 pub mod fresnel;
 pub mod gems;
 pub mod metals;
@@ -17,4 +18,4 @@ pub mod spec;
 pub mod spectrum;
 
 pub use spec::{Spec, Wavelengths, N, LAMBDA_MAX, LAMBDA_MIN};
-pub use spectrum::{Blackbody, Constant, Piecewise, RgbAlbedo, RgbIlluminant, Spectrum};
+pub use spectrum::{blackbody_normalized, Blackbody, Constant, Piecewise, RgbAlbedo, RgbIlluminant, Spectrum};
