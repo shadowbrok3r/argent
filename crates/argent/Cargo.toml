@@ -1,0 +1,19 @@
+[package]
+name = "argent"
+description = "Photoreal jewelry renders from STL: stills, turntables, catalog sheets, a live studio."
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "argent"
+path = "src/main.rs"
+
+[dependencies]
+argent-core.workspace = true
+argent-mesh.workspace = true
+argent-spectra.workspace = true
+argent-post.workspace = true
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true

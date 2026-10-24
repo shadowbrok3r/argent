@@ -1,0 +1,11 @@
+[package]
+name = "argent-post"
+description = "Film development for argent: denoising (OIDN or built-in), AgX tone mapping, image and video output, contact sheets, Forge reel QC."
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+rayon.workspace = true
+image = { version = "0.25.10", default-features = false, features = ["png", "jpeg"] }

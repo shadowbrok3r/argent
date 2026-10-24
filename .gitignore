@@ -1,0 +1,11 @@
+/target
+/target-*
+/out
+/assets/**/*.stl
+/assets/**/*.STL
+/assets/**/*.glb
+/assets/**/*.ply
+/assets/**/*.obj
+/assets/**/*.3mf
+!/assets/test/**
+*.mp4

@@ -1,0 +1,8 @@
+[package]
+name = "argent-spectra"
+description = "Spectral data and math for argent: sampled wavelengths, CIE colour matching, measured metal and gem optics, Fresnel."
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+
+[dependencies]

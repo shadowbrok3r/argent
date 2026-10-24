@@ -1,0 +1,18 @@
+[package]
+name = "argent-core"
+description = "argent's spectral path tracer: BVH, cameras, jewelry materials, studio lighting, integrator."
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+
+[dependencies]
+argent-mesh.workspace = true
+argent-spectra.workspace = true
+argent-post.workspace = true
+anyhow.workspace = true
+glam.workspace = true
+rayon.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sobol_burley.workspace = true
+parking_lot.workspace = true
