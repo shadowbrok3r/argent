@@ -109,6 +109,22 @@ enum Cmd {
         #[arg(long, default_value_t = 6.0)]
         seconds: f32,
     },
+    /// Lay existing images out as a captioned contact sheet.
+    Montage {
+        /// Images (PNG/JPEG); captions come from the file names.
+        #[arg(required = true)]
+        images: Vec<PathBuf>,
+        #[arg(short, long, default_value = "montage.png")]
+        out: PathBuf,
+        #[arg(long, default_value_t = 4)]
+        columns: u32,
+        #[arg(long, default_value_t = 420)]
+        tile: u32,
+        #[arg(long)]
+        title: Option<String>,
+        #[arg(long)]
+        subtitle: Option<String>,
+    },
     /// Live studio in the browser (progressive renders, phone-friendly) + JSON API.
     Serve {
         #[arg(long, default_value = "0.0.0.0")]
@@ -159,6 +175,7 @@ pub fn run() -> Result<()> {
         Cmd::Batch { dir, out, shot, metals, views, no_turntable, seconds } => {
             jobs::batch(&dir, &out, &shot, &metals, &views, !no_turntable, seconds)
         }
+        Cmd::Montage { images, out, columns, tile, title, subtitle } => jobs::montage(&images, &out, columns, tile, title, subtitle),
         Cmd::Serve { host, port, library, out } => crate::serve::serve(&host, port, library, out),
     }
 }

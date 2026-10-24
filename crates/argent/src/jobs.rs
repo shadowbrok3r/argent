@@ -849,6 +849,32 @@ pub fn sheet_prepared(p: &Prepared, name: &str, shot: &ShotArgs, out: &Path, met
     Ok(manifest)
 }
 
+/// Captioned contact sheet from existing images.
+pub fn montage(images: &[PathBuf], out: &Path, columns: u32, tile: u32, title: Option<String>, subtitle: Option<String>) -> Result<()> {
+    let mut tiles = vec![];
+    for p in images {
+        let img = argent_post::io::read_rgb8(p).with_context(|| format!("reading {}", p.display()))?;
+        let caption = p
+            .file_stem()
+            .map(|s| s.to_string_lossy().replace(['-', '_'], " "))
+            .unwrap_or_default();
+        tiles.push(argent_post::sheet::Tile { image: img, caption });
+    }
+    let style = argent_post::sheet::SheetStyle {
+        columns: columns.max(1),
+        tile_width: tile,
+        background: [14, 14, 15],
+        text: [232, 226, 214],
+        title,
+        subtitle,
+    };
+    let sheet = argent_post::sheet::contact_sheet(&tiles, &style);
+    write_image(out, &sheet)?;
+    eprintln!("{} ({} tiles, {}×{})", out.display(), tiles.len(), sheet.width, sheet.height);
+    marker("IMAGE", out);
+    Ok(())
+}
+
 pub fn find_meshes(dir: &Path) -> Vec<PathBuf> {
     let mut out = vec![];
     let mut stack = vec![dir.to_path_buf()];
