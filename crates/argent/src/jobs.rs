@@ -30,6 +30,9 @@ pub struct PieceArgs {
     /// Units of the file: mm (default), cm, m, in.
     #[arg(long, default_value = "mm")]
     pub units: String,
+    /// Hang a cable chain from the bail: auto (pendants), on, off.
+    #[arg(long, default_value = "auto")]
+    pub chain: String,
 }
 
 #[derive(clap::Args, Clone, Debug)]
@@ -216,7 +219,11 @@ pub fn prepare(args: &PieceArgs) -> Result<Prepared> {
         }
         pose = Some(Pose { center: base.center, rotation: mul(rot_matrix(extra), base.rotation) });
     }
-    let mut p = Prepared::new(mesh, pose);
+    let chain = match args.chain.as_str() {
+        "off" | "no" | "none" => None,
+        _ => Some(argent_core::chain::ChainSpec::cable(1.0)),
+    };
+    let mut p = Prepared::build(mesh, pose, chain, args.chain == "on");
     p.default_stones = sidecar_stone_rules(&args.files);
     if !p.default_stones.is_empty() {
         eprintln!("  stones from sidecar: {}", p.default_stones.iter().map(|r| format!("{}={}", r.part, r.gem)).collect::<Vec<_>>().join(", "));
@@ -676,7 +683,7 @@ pub fn batch(dir: &Path, out: &Path, shot: &ShotArgs, metals: &[String], views: 
     for f in &files {
         let name = piece_name(std::slice::from_ref(f));
         eprintln!("== {name}");
-        let args = PieceArgs { files: vec![f.clone()], no_orient: false, rotate: None, flip: false, units: "mm".into() };
+        let args = PieceArgs { files: vec![f.clone()], no_orient: false, rotate: None, flip: false, units: "mm".into(), chain: "auto".into() };
         let p = match prepare(&args) {
             Ok(p) => p,
             Err(e) => {

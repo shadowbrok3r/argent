@@ -79,17 +79,52 @@ pub struct Prepared {
 impl Prepared {
     /// Pose the mesh (auto unless `pose` is given), build the BVH, compute
     /// the cavity mask.
-    pub fn new(mut mesh: Mesh, pose: Option<Pose>) -> Prepared {
+    pub fn new(mesh: Mesh, pose: Option<Pose>) -> Prepared {
+        Prepared::with_chain(mesh, pose, None)
+    }
+
+    /// As [`Prepared::new`], hanging a chain from a pendant's bail when
+    /// `chain` is given and the piece is a pendant (or `force` kind Other
+    /// with a clear top). The chain is metal but never framed.
+    pub fn with_chain(mesh: Mesh, pose: Option<Pose>, chain: Option<crate::chain::ChainSpec>) -> Prepared {
+        Prepared::build(mesh, pose, chain, false)
+    }
+
+    /// `force_chain` hangs the chain even when the piece wasn't recognised
+    /// as a pendant.
+    pub fn build(mut mesh: Mesh, pose: Option<Pose>, chain: Option<crate::chain::ChainSpec>, force_chain: bool) -> Prepared {
         let orientation = match pose {
             Some(p) => Orientation { kind: PieceKind::Other, pose: p, bore_radius: None, confidence: 1.0, notes: vec!["pose given".into()] },
             None => argent_mesh::orient::detect(&mesh),
         };
         mesh.apply_pose(&orientation.pose);
+        let (plo, phi) = mesh.bounds();
+        let piece_hull: Vec<V3> = {
+            let step = (mesh.positions.len() / 4000).max(1);
+            mesh.positions.iter().step_by(step).map(|&p| V3::from(p)).collect()
+        };
+        let wants_chain = orientation.kind == PieceKind::Pendant || (force_chain && orientation.kind != PieceKind::Ring);
+        if let (Some(spec), true) = (chain, wants_chain) {
+            // Hang from the top of the piece, slightly below its highest
+            // point so the first link passes through the bail.
+            let size = (V3::from(phi) - V3::from(plo)).max_element();
+            let top: Vec<V3> = mesh.positions.iter().map(|&p| V3::from(p)).filter(|p| p.y > phi[1] - 0.08 * size).collect();
+            let c = top.iter().fold(V3::ZERO, |a, &b| a + b) / top.len().max(1) as f32;
+            let anchor = V3::new(c.x, phi[1] - 0.04 * size, c.z);
+            let scale = (size / 30.0).clamp(0.6, 1.6);
+            let mut spec = spec;
+            spec.wire *= scale;
+            spec.link_len *= scale;
+            spec.link_w *= scale;
+            spec.strand = 3.0 * size;
+            mesh.merge(crate::chain::hang(anchor, &spec));
+        }
         let part_names = mesh.parts.iter().map(|p| p.name.clone()).collect();
         let tri_mat = vec![0u16; mesh.triangles.len()];
         let mut piece = Piece::new(&mesh, tri_mat);
-        let (lo, hi) = piece.bounds();
-        let radius = ((hi - lo) * 0.5).length().max(1e-3);
+        // Size the studio and the cavity analysis by the piece, not its chain.
+        let lo = V3::from(plo);
+        let radius = ((V3::from(phi) - lo) * 0.5).length().max(1e-3);
         let settings = argent_mesh::cavity::PatinaSettings {
             ao_distance: (radius * 0.09).clamp(0.4, 2.5),
             curvature_radius: (radius * 0.03).clamp(0.15, 1.0),
@@ -97,9 +132,9 @@ impl Prepared {
         };
         let mask = argent_mesh::cavity::patina_mask(&mesh, &piece, &settings);
         piece.cavity = Some(mask);
-        let step = (mesh.positions.len() / 4000).max(1);
-        let hull = mesh.positions.iter().step_by(step).map(|&p| V3::from(p)).collect();
-        Prepared { floor_y: lo.y, mesh, orientation, piece: Arc::new(piece), part_names, radius, hull, default_stones: vec![] }
+        let hull = piece_hull;
+        let _ = lo;
+        Prepared { floor_y: plo[1], mesh, orientation, piece: Arc::new(piece), part_names, radius, hull, default_stones: vec![] }
     }
 
     /// Material slot per triangle for a set of stone rules: the rule index
