@@ -72,3 +72,24 @@ fn grey_diffuse_sphere_reflects_its_albedo() {
         assert!((c - 0.5).abs() < 0.04, "centre {center:?}");
     }
 }
+
+#[test]
+fn clear_glass_sphere_conserves_energy() {
+    // Every ray that enters a non-absorbing sphere leaves it again (after
+    // any number of total internal reflections), so in a uniform white
+    // furnace the sphere must vanish into the background. Killing internal
+    // reflections once made stones render as grey plastic.
+    let (center, bg) = furnace(Material::gem("glass").unwrap());
+    for c in 0..3 {
+        assert!((center[c] - bg[c]).abs() < 0.05, "centre {center:?} vs background {bg:?}");
+    }
+}
+
+#[test]
+fn diamond_sphere_conserves_energy() {
+    // High index means many TIR bounces: the strictest version of the above.
+    let (center, bg) = furnace(Material::gem("diamond").unwrap());
+    for c in 0..3 {
+        assert!((center[c] - bg[c]).abs() < 0.06, "centre {center:?} vs background {bg:?}");
+    }
+}
