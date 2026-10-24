@@ -33,6 +33,13 @@ pub struct PieceArgs {
     /// Hang a cable chain from the bail: auto (pendants), on, off.
     #[arg(long, default_value = "auto")]
     pub chain: String,
+    /// Scale the mesh so its largest dimension is this many mm (for models
+    /// in unknown units, e.g. a sculpt to be shown at pendant size).
+    #[arg(long)]
+    pub fit: Option<f32>,
+    /// Multiply all coordinates by this factor (after --units).
+    #[arg(long)]
+    pub scale: Option<f32>,
 }
 
 #[derive(clap::Args, Clone, Debug)]
@@ -93,6 +100,21 @@ pub fn marker(kind: &str, path: &Path) {
     if MARKERS.load(std::sync::atomic::Ordering::Relaxed) {
         let abs = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
         println!("[{kind}:{}]", abs.display());
+    }
+}
+
+impl Default for PieceArgs {
+    fn default() -> Self {
+        PieceArgs {
+            files: vec![],
+            no_orient: false,
+            rotate: None,
+            flip: false,
+            units: "mm".into(),
+            chain: "auto".into(),
+            fit: None,
+            scale: None,
+        }
     }
 }
 
@@ -204,6 +226,17 @@ pub fn prepare(args: &PieceArgs) -> Result<Prepared> {
         argent_mesh::load_many(&files, &opts)
     }
     .with_context(|| format!("loading {:?}", files))?;
+    let mut mesh = mesh;
+    if let Some(k) = args.scale {
+        mesh.scale(k);
+    }
+    if let Some(mm) = args.fit {
+        let (lo, hi) = mesh.bounds();
+        let ext = (0..3).map(|i| hi[i] - lo[i]).fold(0.0f32, f32::max);
+        if ext > 0.0 {
+            mesh.scale(mm / ext);
+        }
+    }
     let t_load = t0.elapsed();
     let mut pose = if args.no_orient {
         let (lo, hi) = mesh.bounds();
@@ -765,7 +798,7 @@ pub fn batch(dir: &Path, out: &Path, shot: &ShotArgs, metals: &[String], views: 
     for f in &files {
         let name = piece_name(std::slice::from_ref(f));
         eprintln!("== {name}");
-        let args = PieceArgs { files: vec![f.clone()], no_orient: false, rotate: None, flip: false, units: "mm".into(), chain: "auto".into() };
+        let args = PieceArgs { files: vec![f.clone()], no_orient: false, rotate: None, flip: false, units: "mm".into(), chain: "auto".into(), fit: None, scale: None };
         let p = match prepare(&args) {
             Ok(p) => p,
             Err(e) => {
