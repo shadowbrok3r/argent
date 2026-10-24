@@ -14,7 +14,8 @@ license = "MIT OR Apache-2.0"
 
 [dependencies]
 # The RingDesigner clone this was built against (github shadowbrok3r/RingDesigner @ 006e043).
-ringdesign-core = { path = "/home/shadowbroker/.claude/projects/-home-shadowbroker/e457d0dd-193b-4d38-a217-b307715a3ab9/scratch/RingDesigner/crates/ringdesign-core" }
+# Pinned to the RingDesigner commit the assets were exported from.
+ringdesign-core = { git = "https://github.com/shadowbrok3r/RingDesigner", rev = "006e043842b8c6c3a3d774fa8810baf6d6dc9de3" }
 anyhow = "1"
 serde_json = "1"
 
