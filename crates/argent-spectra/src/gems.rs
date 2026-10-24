@@ -76,6 +76,9 @@
 //! These are colour models, not measurements: real stones vary with
 //! concentration and cut far more than these tolerances.
 
+// Published dispersion coefficients are kept verbatim, digits beyond f32 included.
+#![allow(clippy::excessive_precision)]
+
 use crate::spectrum::{Constant, Piecewise, Spectrum};
 
 /// How the renderer should treat the stone.
@@ -188,9 +191,9 @@ impl Spectrum for Cauchy {
 }
 
 /// hc in eV·nm.
-const HC: f32 = 1239.841_9;
+const HC: f32 = 1_239.841_9;
 /// FWHM → standard deviation.
-const FWHM_TO_SIGMA: f32 = 1.0 / 2.354_820_1;
+const FWHM_TO_SIGMA: f32 = 1.0 / 2.354_82;
 
 /// One absorption band: a Gaussian in photon energy centred at `center_nm`,
 /// `fwhm_low_ev` wide on its low-energy (long-wavelength) side and
@@ -541,7 +544,8 @@ mod tests {
     #[test]
     fn coloured_stones_have_their_colour_at_4mm() {
         // (name, hue range in CIELAB degrees, L* range)
-        let cases: &[(&str, (f32, f32), (f32, f32))] = &[
+        type Case = (&'static str, (f32, f32), (f32, f32));
+        let cases: &[Case] = &[
             ("sapphire", (280.0, 305.0), (25.0, 45.0)),
             ("ruby", (345.0, 25.0), (25.0, 45.0)),
             ("pink_sapphire", (330.0, 10.0), (65.0, 85.0)),

@@ -165,14 +165,15 @@ fn sigmoid(x: f32) -> f32 {
 /// The three coefficients are solved per colour in [`RgbAlbedo::new`] so that
 /// the spectrum, lit by D65 and integrated against the CIE 1931 observer at
 /// 1 nm, maps back to the input linear sRGB: Newton (Gauss–Newton on the
-/// square 3×3 system, analytic Jacobian) in the normalized wavelength
-/// `t = (λ − 360)/470`, started from the flat grey of the colour's mean and
-/// walked to the target in eight continuation steps with a backtracking line
-/// search (Jakob & Hanika propagate neighbouring solutions through a table for
-/// the same reason: Newton needs a nearby start for saturated colours). Round
-/// trip error is below 1e-6 over the whole sRGB cube, primaries included; a
-/// solve costs some tens of microseconds, so build albedos once per material
-/// (argent-core bakes them to tables anyway), not per sample.
+/// square 3×3 system, analytic Jacobian, backtracking line search) in the
+/// normalized wavelength `t = (λ − 360)/470`, started from the flat grey of
+/// the colour's mean and walked to the target in eight continuation steps on
+/// 5 nm-binned weights, then polished on the exact 1 nm weights (Jakob &
+/// Hanika propagate neighbouring solutions through a table for the same
+/// reason: Newton needs a nearby start for saturated colours). Round-trip
+/// error is ~1e-6 over the whole sRGB cube, primaries included (worst
+/// 1.1e-6 on a 21³ grid). A solve costs 40–70 µs, so build albedos once per
+/// material (argent-core bakes them to tables anyway), not per sample.
 ///
 /// Greys, including 0 and 1, are stored as exact constants: the sigmoid only
 /// approaches 0 and 1 asymptotically, and a flat grey must stay flat.
@@ -231,41 +232,56 @@ impl Spectrum for RgbAlbedo {
     }
 }
 
-/// Linear-sRGB weights of each nanometre 360..=830 for a reflectance lit by
-/// D65: rgb = Σ r(λ)·w(λ), and r ≡ 1 gives (1, 1, 1) to 1e-4.
-fn srgb_weights() -> &'static [[f64; 3]; 471] {
-    static W: OnceLock<[[f64; 3]; 471]> = OnceLock::new();
-    W.get_or_init(|| {
+/// Quadrature for the sigmoid fit: normalized wavelengths `t` and the
+/// linear-sRGB weights of a reflectance lit by D65 (rgb = Σ r(t)·w).
+struct Quadrature {
+    t: Vec<f64>,
+    w: Vec<[f64; 3]>,
+}
+
+/// The exact quadrature: every nanometre 360..=830, the same sum as
+/// [`cie::reflectance_srgb`] (r ≡ 1 gives (1, 1, 1) to 1e-4).
+fn fine_quadrature() -> &'static Quadrature {
+    static Q: OnceLock<Quadrature> = OnceLock::new();
+    Q.get_or_init(|| {
         const M: [[f64; 3]; 3] = [
             [3.240_454_2, -1.537_138_5, -0.498_531_4],
             [-0.969_266, 1.876_010_8, 0.041_556],
             [0.055_643_4, -0.204_025_9, 1.057_225_2],
         ];
         let xyz = cie::d65_cmf_weights();
-        let mut w = [[0.0f64; 3]; 471];
-        for (o, v) in w.iter_mut().zip(xyz.iter()) {
-            for k in 0..3 {
-                o[k] = M[k][0] * v[0] + M[k][1] * v[1] + M[k][2] * v[2];
-            }
-        }
-        w
+        let w = xyz.iter().map(|v| [0, 1, 2].map(|k| M[k][0] * v[0] + M[k][1] * v[1] + M[k][2] * v[2])).collect();
+        let t = (0..xyz.len()).map(|j| j as f64 / SIG_DL as f64).collect();
+        Quadrature { t, w }
     })
 }
 
-#[inline]
-fn sig64(x: f64) -> f64 {
-    0.5 + 0.5 * x / (1.0 + x * x).sqrt()
-}
-#[inline]
-fn dsig64(x: f64) -> f64 {
-    0.5 / (1.0 + x * x).powf(1.5)
+/// The same weights summed into 5 nm bins (evaluated at the bin centres): a
+/// fifth of the work, accurate to ~1e-3, used to walk the continuation before
+/// the final polish on [`fine_quadrature`].
+fn coarse_quadrature() -> &'static Quadrature {
+    static Q: OnceLock<Quadrature> = OnceLock::new();
+    Q.get_or_init(|| {
+        let f = fine_quadrature();
+        let bins = (f.t.len() - 1) / 5 + 1;
+        let mut w = vec![[0.0f64; 3]; bins];
+        for (i, wi) in f.w.iter().enumerate() {
+            let b = ((i + 2) / 5).min(bins - 1);
+            for k in 0..3 {
+                w[b][k] += wi[k];
+            }
+        }
+        let t = (0..bins).map(|b| (5 * b) as f64 / SIG_DL as f64).collect();
+        Quadrature { t, w }
+    })
 }
 
-fn sigmoid_rgb(c: &[f64; 3], w: &[[f64; 3]; 471]) -> [f64; 3] {
+/// rgb of the sigmoid spectrum with normalized coefficients `c`.
+fn sigmoid_rgb(c: &[f64; 3], q: &Quadrature) -> [f64; 3] {
     let mut acc = [0.0f64; 3];
-    for (j, wj) in w.iter().enumerate() {
-        let t = j as f64 / SIG_DL as f64;
-        let s = sig64((c[0] * t + c[1]) * t + c[2]);
+    for (&t, wj) in q.t.iter().zip(q.w.iter()) {
+        let x = (c[0] * t + c[1]) * t + c[2];
+        let s = 0.5 + 0.5 * x / (1.0 + x * x).sqrt();
         for k in 0..3 {
             acc[k] += s * wj[k];
         }
@@ -284,8 +300,9 @@ fn solve3(mut a: [[f64; 3]; 3], mut b: [f64; 3]) -> Option<[f64; 3]> {
         b.swap(col, piv);
         for r in col + 1..3 {
             let f = a[r][col] / a[col][col];
-            for k in col..3 {
-                a[r][k] -= f * a[col][k];
+            let pivot_row = a[col];
+            for (ark, pk) in a[r][col..].iter_mut().zip(&pivot_row[col..]) {
+                *ark -= f * pk;
             }
             b[r] -= f * b[col];
         }
@@ -298,61 +315,62 @@ fn solve3(mut a: [[f64; 3]; 3], mut b: [f64; 3]) -> Option<[f64; 3]> {
     x.iter().all(|v| v.is_finite()).then_some(x)
 }
 
+/// Newton on `rgb(c) = goal` with a backtracking line search, until
+/// `|rgb − goal|² < tol` or `max_iter` steps.
+fn newton(c: &mut [f64; 3], goal: [f64; 3], q: &Quadrature, max_iter: usize, tol: f64) {
+    for _ in 0..max_iter {
+        let mut f = [-goal[0], -goal[1], -goal[2]];
+        let mut jac = [[0.0f64; 3]; 3];
+        for (&t, wj) in q.t.iter().zip(q.w.iter()) {
+            let x = (c[0] * t + c[1]) * t + c[2];
+            let r = 1.0 / (1.0 + x * x).sqrt();
+            let s = 0.5 + 0.5 * x * r;
+            let d = 0.5 * r * r * r; // S'(x)
+            let dx = [d * t * t, d * t, d];
+            for k in 0..3 {
+                f[k] += s * wj[k];
+                for m in 0..3 {
+                    jac[k][m] += dx[m] * wj[k];
+                }
+            }
+        }
+        let f2 = f[0] * f[0] + f[1] * f[1] + f[2] * f[2];
+        if f2 < tol {
+            return;
+        }
+        let Some(step) = solve3(jac, [-f[0], -f[1], -f[2]]) else { return };
+        let mut alpha = 1.0;
+        loop {
+            let cn = [c[0] + alpha * step[0], c[1] + alpha * step[1], c[2] + alpha * step[2]];
+            let r = sigmoid_rgb(&cn, q);
+            let e = [r[0] - goal[0], r[1] - goal[1], r[2] - goal[2]];
+            if e[0] * e[0] + e[1] * e[1] + e[2] * e[2] < f2 {
+                *c = cn;
+                break;
+            }
+            alpha *= 0.5;
+            if alpha < 1e-6 {
+                return;
+            }
+        }
+    }
+}
+
 /// Normalized sigmoid coefficients whose D65 reflectance is `target` (linear sRGB).
 fn solve_sigmoid(target: [f32; 3]) -> Option<[f32; 3]> {
-    let w = srgb_weights();
+    let (coarse, fine) = (coarse_quadrature(), fine_quadrature());
     let target = target.map(|v| v as f64);
     let g0 = ((target[0] + target[1] + target[2]) / 3.0).clamp(0.02, 0.98);
     let u = 2.0 * g0 - 1.0;
     let mut c = [0.0, 0.0, u / (1.0 - u * u).sqrt()];
-    let start = sigmoid_rgb(&c, w);
+    let start = sigmoid_rgb(&c, coarse);
     const STEPS: usize = 8;
     for k in 1..=STEPS {
         let a = k as f64 / STEPS as f64;
         let goal = [0, 1, 2].map(|i| start[i] + (target[i] - start[i]) * a);
-        let (max_iter, tol) = if k < STEPS { (40, 1e-10) } else { (100, 1e-15) };
-        for _ in 0..max_iter {
-            let mut f = [0.0f64; 3];
-            let mut jac = [[0.0f64; 3]; 3];
-            for (j, wj) in w.iter().enumerate() {
-                let t = j as f64 / SIG_DL as f64;
-                let x = (c[0] * t + c[1]) * t + c[2];
-                let s = sig64(x);
-                let d = dsig64(x);
-                let dx = [t * t, t, 1.0];
-                for r in 0..3 {
-                    f[r] += s * wj[r];
-                    for m in 0..3 {
-                        jac[r][m] += d * dx[m] * wj[r];
-                    }
-                }
-            }
-            for r in 0..3 {
-                f[r] -= goal[r];
-            }
-            let f2 = f[0] * f[0] + f[1] * f[1] + f[2] * f[2];
-            if f2 < tol {
-                break;
-            }
-            let Some(step) = solve3(jac, [-f[0], -f[1], -f[2]]) else { break };
-            let mut alpha = 1.0;
-            let mut accepted = false;
-            while alpha > 1e-6 {
-                let cn = [c[0] + alpha * step[0], c[1] + alpha * step[1], c[2] + alpha * step[2]];
-                let r = sigmoid_rgb(&cn, w);
-                let e = [r[0] - goal[0], r[1] - goal[1], r[2] - goal[2]];
-                if e[0] * e[0] + e[1] * e[1] + e[2] * e[2] < f2 {
-                    c = cn;
-                    accepted = true;
-                    break;
-                }
-                alpha *= 0.5;
-            }
-            if !accepted {
-                break;
-            }
-        }
+        newton(&mut c, goal, coarse, 30, 1e-10);
     }
+    newton(&mut c, target, fine, 30, 1e-16);
     c.iter().all(|v| v.is_finite()).then(|| c.map(|v| v as f32))
 }
 

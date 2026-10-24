@@ -26,7 +26,7 @@ use std::sync::OnceLock;
 
 /// ∫ ȳ(λ) dλ over 360..830 nm for the tabulated CIE 1931 2° observer: the
 /// 1 nm sum of the table (106.856 917; pbrt-v4 uses 106.856 895).
-pub const CIE_Y_INTEGRAL: f32 = 106.856_917;
+pub const CIE_Y_INTEGRAL: f32 = 106.856_92;
 
 /// First and last tabulated wavelength of the colour matching functions, nm.
 pub const CMF_MIN: f32 = 360.0;

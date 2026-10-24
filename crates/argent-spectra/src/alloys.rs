@@ -83,15 +83,15 @@
 //! yellow and 14/20 gold-filled stock, which the studio sells. Those alloys
 //! are copper-rich with a little zinc (≈58.5Au–4–12Ag–26–32Cu–3–6Zn) and
 //! measure a\* +1.0…+4.0, b\* +17.7…+20.5 (US 5 180 551 table 1A, twelve
-//! 58.25Au alloys; US 6 676 776 reports a\* −0.9…+3.1, b\* +20…+22 for its
-//! paler variants). The model has no zinc, and the equal-Ag:Cu ternary lands
-//! inside that range: a\* 3.7, b\* 18.6, about 1.5 from the centre of the
-//! US 5 180 551 range in the a\*b\* plane. The high-silver 58.5Au–30Ag–11.5Cu
-//! first proposed is a pale, nearly hue-neutral 1N-type yellow, a\* 0.0,
-//! b\* 16.9 (L\* 93.1), about 3.6 from that centre and outside the commercial
+//! 58.25Au alloys; US 6 676 776 lists a\* −4.5…+3.1, b\* +20.0…+22.0 for
+//! prior-art and greener high-silver variants). The model has no zinc, and the
+//! equal-Ag:Cu ternary lands inside the US 5 180 551 range: a\* 3.7, b\* 18.6,
+//! 1.3 from its centre in the a\*b\* plane. The high-silver
+//! 58.5Au–30Ag–11.5Cu first proposed is a pale, nearly hue-neutral 1N-type
+//! yellow, a\* 0.0, b\* 16.9 (L\* 93.1), 3.3 from that centre and outside the
 //! range. 10k yellow is 41.7Au with Ag:Cu 1:1 (29.15/29.15), the same yellow
 //! balance at lower karat: a\* 4.0, b\* 15.8, paler than 14k as commercial 10K
-//! is. (Densities stay the measured commercial values.)
+//! is. [`Alloy::density`] is unchanged.
 
 use crate::data::alloys as tab;
 use crate::metals::{self, ComplexIor, GRID_LEN, GRID_MIN, GRID_STEP};
@@ -285,7 +285,7 @@ const DENSITY_AG: f32 = 10.49;
 const DENSITY_CU: f32 = 8.96;
 
 /// Photon energy (eV) of a wavelength (nm) and back.
-const HC_EV_NM: f64 = 1239.841_93;
+const HC_EV_NM: f64 = 1_239.841_93;
 /// ε₀/ħ in SI-per-eV units: ħΔγ[eV] = (ε₀/ħ)·(ħω_p[eV])²·Δρ[Ω·m].
 const EPS0_OVER_HBAR: f64 = 8.854_187_812_8e-12 / 6.582_119_569e-16;
 

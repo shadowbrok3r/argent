@@ -29,8 +29,9 @@
 //!
 //! These agree with Naty Hoffman's published linear F0 values (SIGGRAPH 2015
 //! "Physics and Math of Shading"; Real-Time Rendering 4th ed. table 9.2) to
-//! within a few hundredths where both exist: Pd and Cr-from-Johnson exactly,
-//! Pt and Ni (Rakić) within 0.01, Cu within 0.02. Johnson & Christy's gold is
+//! within a few hundredths where both rest on the same data: Pd exactly,
+//! Pt, Ni and Al within 0.01, Cu within 0.02 (Hoffman's Cr is Johnson &
+//! Christy's film data, which this table does not use; see below). Johnson & Christy's gold is
 //! a little less yellow-green than more recent films (McPeak 2015, Olmon 2012
 //! give G ≈ 0.76–0.78 against 0.73 here) and their silver a little brighter in
 //! the blue than Hoffman's 0.915; both are kept because they are the
