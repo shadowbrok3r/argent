@@ -233,7 +233,11 @@ pub fn sidecar_stone_rules(files: &[PathBuf]) -> Vec<StoneRule> {
                 let v: Vec<f32> = a.iter().filter_map(|x| x.as_f64()).map(|x| x as f32).collect();
                 [v.first().copied().unwrap_or(0.0), v.get(1).copied().unwrap_or(0.0), v.get(2).copied().unwrap_or(0.0)]
             });
-            if let Some(g) = argent_core::shot::gem_from_text(label).or_else(|| tint.map(gem_from_tint)) {
+            // A near-black tint means a black stone whatever the label says
+            // ("Venom spinels" are black spinels, not the red kind).
+            let black = tint.is_some_and(|t| t[0].max(t[1]).max(t[2]) < 0.08);
+            let named = if black { Some("onyx".to_string()) } else { argent_core::shot::gem_from_text(label) };
+            if let Some(g) = named.or_else(|| tint.map(gem_from_tint)) {
                 rules.push(StoneRule { part: obj.to_string(), gem: g });
             }
         }
