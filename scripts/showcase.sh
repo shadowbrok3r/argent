@@ -20,9 +20,11 @@ r hero-nocturne-gold nocturne-signet --metal gold14k --view hero --spp 256
 # One file, every metal
 for m in sterling gold14k rose14k bronze; do r "metal-solstice-$m" solstice-signet --metal $m --view hero --size 1080x1350 --spp 128; done
 # Antique finish on vs off
-r patina-ophidian-off ophidian --metal sterling --patina 0 --view side --size 1080x1080 --spp 160
-r patina-ophidian-on  ophidian --metal sterling --patina 1 --view side --size 1080x1080 --spp 160
-# Stones
+r patina-ophidian-off ophidian --metal sterling --patina 0 --studio window --view three-quarter --size 1080x1080 --spp 160
+r patina-ophidian-on  ophidian --metal sterling --patina 1 --studio window --view three-quarter --size 1080x1080 --spp 160
+# Stones (a loose brilliant first, to show dispersion)
+log gem-brilliant-diamond
+"$A" render "$HOME/argent/assets/gems/brilliant.obj" --stone '*=diamond' --studio white --view three-quarter --size 1080x1080 --spp 256 --fit 10 --fstop 0 -o "$OUT/gem-brilliant-diamond.png" 2>&1 | tail -1
 r stones-manticora manticora --metal sterling --view hero --size 1080x1350 --spp 192
 r stones-arachne   arachne   --metal sterling --view hero --size 1080x1350 --spp 192
 r stones-oriel     oriel     --metal gold18k  --view three-quarter --size 1080x1350 --spp 192
