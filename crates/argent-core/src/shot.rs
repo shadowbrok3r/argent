@@ -152,13 +152,23 @@ impl Prepared {
     fn slots(&self, rules: &[StoneRule]) -> (Vec<u16>, Vec<String>) {
         let mut gems: Vec<String> = vec![];
         let mut tri = vec![0u16; self.mesh.triangles.len()];
-        for part in &self.mesh.parts {
+        // The largest part is the metal body: never guess a stone from its
+        // name ("ophidian-amethyst-serpent.stl", "OpalSkull.stl" are rings,
+        // not gems). Explicit rules can still name it.
+        let body = self
+            .mesh
+            .parts
+            .iter()
+            .enumerate()
+            .max_by_key(|(_, p)| p.triangles.end - p.triangles.start)
+            .map(|(i, _)| i);
+        for (pi, part) in self.mesh.parts.iter().enumerate() {
             let mut gem = rules
                 .iter()
                 .chain(self.default_stones.iter())
                 .find(|r| glob(&r.part, &part.name))
                 .map(|r| r.gem.clone());
-            if gem.is_none() {
+            if gem.is_none() && Some(pi) != body {
                 for cand in [part.material.as_deref(), Some(part.name.as_str())].into_iter().flatten() {
                     gem = gem_from_text(cand);
                     if gem.is_some() {
@@ -166,7 +176,7 @@ impl Prepared {
                     }
                 }
             }
-            if gem.is_none() {
+            if gem.is_none() && Some(pi) != body {
                 // Generic stone parts ("gem", "stone_03") default to diamond.
                 let generic = |t: &str| {
                     let t = t.to_ascii_lowercase();
