@@ -1,11 +1,12 @@
 /target
 /target-*
 /out
-/assets/**/*.stl
-/assets/**/*.STL
-/assets/**/*.glb
-/assets/**/*.ply
-/assets/**/*.obj
-/assets/**/*.3mf
-!/assets/test/**
+/library
+# Meshes are local test data (2.6 GB); keep the README and the exporter source.
+/assets/**
+!/assets/*/
+!/assets/README.md
+!/assets/ringdesigner/tools/
+!/assets/ringdesigner/tools/**
+/assets/ringdesigner/tools/**/target
 *.mp4

@@ -1,9 +1,9 @@
 [Unit]
 Description=argent live studio (photoreal jewelry renders, :8790)
-After=network-online.target
+After=network-online.target tailscaled.service
 
 [Service]
-ExecStart=%h/.local/bin/argent --priority low serve --port 8790 --library %h/argent/assets,%h/argent/library --out %h/argent/out/studio
+ExecStart=%h/.local/bin/argent --priority low serve --host 100.96.121.37 --port 8790 --library %h/argent/assets,%h/argent/library --out %h/argent/out/studio
 Restart=on-failure
 RestartSec=10
 Nice=10

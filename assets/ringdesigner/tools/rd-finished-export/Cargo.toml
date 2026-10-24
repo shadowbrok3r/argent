@@ -1,0 +1,22 @@
+# Writes RingDesigner designs as the FINISHED ring at nominal size (what the
+# showcase examples save as finished-metal.stl) plus every stone as its own
+# closed solid. The stock `ringdesign export` CLI writes the casting pattern
+# for STL (sand designs lose their made settings) and never writes stones.
+#
+# Build (from this directory):
+#   CARGO_TARGET_DIR=$HOME/argent/target-ringdesigner cargo build --release
+[package]
+name = "rd-finished-export"
+version = "0.1.0"
+edition = "2024"
+publish = false
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+# The RingDesigner clone this was built against (github shadowbrok3r/RingDesigner @ 006e043).
+ringdesign-core = { path = "/home/shadowbroker/.claude/projects/-home-shadowbroker/e457d0dd-193b-4d38-a217-b307715a3ab9/scratch/RingDesigner/crates/ringdesign-core" }
+anyhow = "1"
+serde_json = "1"
+
+# Its own workspace root, so it never joins argent's workspace.
+[workspace]
