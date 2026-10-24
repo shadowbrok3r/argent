@@ -305,8 +305,9 @@ pub fn look(shot: &ShotArgs) -> Result<Look> {
     let mut stones = vec![];
     for s in &shot.stones {
         let (part, gem) = s.split_once('=').unwrap_or(("*", s.as_str()));
-        if argent_spectra::gems::get(gem).is_none() {
-            bail!("unknown gem {gem}; known: {}", argent_spectra::gems::names().join(", "));
+        // Opal is the renderer's own diffraction material, not a table entry.
+        if !gem.to_ascii_lowercase().contains("opal") && argent_spectra::gems::get(gem).is_none() {
+            bail!("unknown gem {gem}; known: opal, black_opal, {}", argent_spectra::gems::names().join(", "));
         }
         stones.push(StoneRule { part: part.into(), gem: gem.into() });
     }
