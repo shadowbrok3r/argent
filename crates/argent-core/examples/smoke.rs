@@ -70,7 +70,8 @@ fn ring() -> Mesh {
 
 fn main() -> anyhow::Result<()> {
     let out = std::env::args().nth(1).unwrap_or_else(|| "smoke.png".into());
-    let alloy = std::env::args().nth(2).and_then(|s| Alloy::from_name(&s)).unwrap_or(Alloy::Sterling);
+    let metal_arg = std::env::args().nth(2).unwrap_or_default();
+    let alloy = Alloy::from_name(&metal_arg).unwrap_or(Alloy::Sterling);
     let studio = std::env::args().nth(3).and_then(|s| Studio::from_name(&s)).unwrap_or(Studio::Noir);
     let spp: u32 = std::env::args().nth(4).and_then(|s| s.parse().ok()).unwrap_or(64);
     let mesh = ring();
@@ -83,7 +84,11 @@ fn main() -> anyhow::Result<()> {
     let mask = argent_mesh::cavity::patina_mask(&mesh, &piece, &Default::default());
     piece.cavity = Some(mask);
     let rig = studio.build(radius);
-    let mut materials = vec![Material::metal(alloy, 0.07).with_patina(default_patina(0.85, alloy))];
+    let mut materials = vec![if metal_arg.contains("opal") {
+        Material::gem(&metal_arg).unwrap()
+    } else {
+        Material::metal(alloy, 0.07).with_patina(default_patina(0.85, alloy))
+    }];
     let floor = rig.floor.map(|(m, a, b)| {
         materials.push(m);
         floor_at(lo.y, materials.len() - 1, (a, b), radius)

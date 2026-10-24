@@ -20,12 +20,16 @@ pub struct Panel {
     pub emission: Option<Arc<dyn Spectrum>>,
     /// Softboxes are usually outside the frame; when false, camera rays pass through.
     pub camera_visible: bool,
+    /// Diffusion falloff toward the edges (0 = hard-edged, 1 = fully
+    /// feathered): real softboxes are brighter in the middle, which gives
+    /// polished metal graded highlights instead of cut-out rectangles.
+    pub feather: f32,
 }
 
 impl Panel {
     pub fn new(name: &str, center: V3, hu: V3, hv: V3, emission: Option<Arc<dyn Spectrum>>) -> Panel {
         let c = hu.cross(hv);
-        Panel { name: name.into(), center, hu, hv, n: c.normalize(), area: 4.0 * c.length(), emission, camera_visible: false }
+        Panel { name: name.into(), center, hu, hv, n: c.normalize(), area: 4.0 * c.length(), emission, camera_visible: false, feather: 0.35 }
     }
 
     /// A softbox of size `w × h` mm at `pos`, facing `target`; `h` runs
@@ -58,13 +62,34 @@ impl Panel {
         if a.abs() <= 1.0 && b.abs() <= 1.0 { Some(t) } else { None }
     }
 
-    /// Radiance seen along `dir` arriving at the panel (front face only).
+    /// Radiance arriving along `dir` from point `p` on the panel (front face only).
     #[inline]
-    pub fn le(&self, dir: V3, wl: &Wavelengths) -> Spec {
+    pub fn le(&self, p: V3, dir: V3, wl: &Wavelengths) -> Spec {
         match &self.emission {
-            Some(e) if dir.dot(self.n) < 0.0 => e.sample(wl),
+            Some(e) if dir.dot(self.n) < 0.0 => e.sample(wl) * self.profile(p),
             _ => Spec::ZERO,
         }
+    }
+
+    /// Diffusion profile at `p`: 1 in the middle, easing to 0.25 at the rim.
+    #[inline]
+    pub fn profile(&self, p: V3) -> f32 {
+        if self.feather <= 0.0 {
+            return 1.0;
+        }
+        let q = p - self.center;
+        let a = (q.dot(self.hu) / self.hu.length_squared()).abs().min(1.0);
+        let b = (q.dot(self.hv) / self.hv.length_squared()).abs().min(1.0);
+        let f = |x: f32| {
+            let start = 1.0 - self.feather;
+            if x <= start {
+                1.0
+            } else {
+                let t = (x - start) / self.feather;
+                1.0 - 0.75 * t * t * (3.0 - 2.0 * t)
+            }
+        };
+        f(a) * f(b)
     }
 
     #[inline]

@@ -94,11 +94,11 @@ impl Studio {
         match self {
             Studio::Noir => StudioRig {
                 panels: vec![
-                    box_("key-top", at(0.0, 260.0, 90.0), 260.0, 200.0, 5600.0, 2.4),
-                    box_("strip-left", at(-230.0, 60.0, -60.0), 70.0, 520.0, 5600.0, 7.0),
-                    box_("strip-right", at(230.0, 60.0, -60.0), 70.0, 520.0, 5600.0, 7.0),
-                    box_("fill-front", at(0.0, 40.0, 320.0), 420.0, 120.0, 5200.0, 0.55),
-                    box_("kicker-back", at(0.0, 180.0, -260.0), 300.0, 90.0, 6000.0, 1.6),
+                    box_("key-top", at(0.0, 270.0, 110.0), 340.0, 240.0, 5600.0, 3.2),
+                    box_("strip-left", at(-230.0, 70.0, -50.0), 70.0, 540.0, 5600.0, 7.5),
+                    box_("strip-right", at(230.0, 70.0, -50.0), 70.0, 540.0, 5600.0, 7.5),
+                    box_("fill-front", at(30.0, 90.0, 330.0), 520.0, 300.0, 5400.0, 0.9),
+                    box_("kicker-back", at(0.0, 260.0, -230.0), 300.0, 90.0, 6000.0, 1.4),
                 ],
                 env: Env::Gradient {
                     top: rgb_spec([0.010, 0.010, 0.011]),
@@ -106,25 +106,29 @@ impl Studio {
                     bottom: rgb_spec([0.002, 0.002, 0.002]),
                     power: 0.6,
                 },
-                floor: Some((Material::plastic([0.003, 0.003, 0.0032], 1.49, 0.05), 45.0, 160.0)),
+                floor: Some((Material::plastic([0.003, 0.003, 0.0032], 1.49, 0.09), 40.0, 130.0)),
                 exposure_ev: 0.0,
             },
             Studio::White => StudioRig {
                 panels: vec![
-                    box_("tent-top", at(0.0, 280.0, 40.0), 520.0, 520.0, 5800.0, 2.2),
-                    box_("tent-left", at(-260.0, 90.0, 60.0), 320.0, 420.0, 5800.0, 1.6),
-                    box_("tent-right", at(260.0, 90.0, 60.0), 320.0, 420.0, 5800.0, 1.6),
-                    box_("tent-front", at(0.0, 60.0, 330.0), 520.0, 260.0, 5800.0, 1.1),
-                    flag("flag-left", at(-150.0, 40.0, -190.0), 140.0, 380.0),
-                    flag("flag-right", at(150.0, 40.0, -190.0), 140.0, 380.0),
+                    box_("tent-top", at(0.0, 300.0, 60.0), 460.0, 420.0, 5800.0, 2.6),
+                    box_("tent-left", at(-270.0, 110.0, 90.0), 260.0, 380.0, 5800.0, 1.7),
+                    box_("tent-right", at(270.0, 110.0, 90.0), 260.0, 380.0, 5800.0, 1.7),
+                    box_("tent-front", at(0.0, 70.0, 340.0), 460.0, 220.0, 5800.0, 1.2),
+                    // Black cards: polished metal needs something dark to
+                    // reflect or it reads as a white blob.
+                    flag("flag-left", at(-170.0, 60.0, -170.0), 170.0, 420.0),
+                    flag("flag-right", at(170.0, 60.0, -170.0), 170.0, 420.0),
+                    flag("flag-back", at(0.0, 120.0, -260.0), 300.0, 160.0),
+                    flag("flag-front-low", at(0.0, 10.0, 260.0), 420.0, 60.0),
                 ],
                 env: Env::Gradient {
-                    top: rgb_spec([2.6, 2.6, 2.6]),
-                    horizon: rgb_spec([2.4, 2.4, 2.4]),
-                    bottom: rgb_spec([2.3, 2.3, 2.3]),
-                    power: 1.0,
+                    top: rgb_spec([1.8, 1.8, 1.8]),
+                    horizon: rgb_spec([0.55, 0.55, 0.56]),
+                    bottom: rgb_spec([0.9, 0.9, 0.9]),
+                    power: 0.45,
                 },
-                floor: Some((Material::diffuse([0.82, 0.82, 0.82]), 70.0, 220.0)),
+                floor: Some((Material::diffuse([0.86, 0.86, 0.86]), 80.0, 260.0)),
                 exposure_ev: 0.0,
             },
             Studio::Velvet => StudioRig {

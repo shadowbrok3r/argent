@@ -60,7 +60,7 @@ pub struct Scene {
 
 /// What a ray hit.
 pub enum Hit {
-    Piece { t: f32, p: V3, ng: V3, ns: V3, material: u16, cavity: f32 },
+    Piece { t: f32, p: V3, p_obj: V3, ng: V3, ns: V3, material: u16, cavity: f32 },
     Panel { t: f32, index: usize },
     Floor { t: f32, p: V3 },
 }
@@ -153,6 +153,7 @@ impl Scene {
             best = Some(Hit::Piece {
                 t: h.t,
                 p: self.to_world(p_obj),
+                p_obj,
                 ng: self.to_world(ng),
                 ns: self.to_world(ns),
                 material: mat,

@@ -71,6 +71,9 @@ pub struct Prepared {
     pub floor_y: f32,
     /// Subsample of vertices for framing.
     pub hull: Vec<V3>,
+    /// Stone assignments that travel with the piece (e.g. from a CAD
+    /// export's sidecar); a look's own rules take precedence.
+    pub default_stones: Vec<StoneRule>,
 }
 
 impl Prepared {
@@ -96,7 +99,7 @@ impl Prepared {
         piece.cavity = Some(mask);
         let step = (mesh.positions.len() / 4000).max(1);
         let hull = mesh.positions.iter().step_by(step).map(|&p| V3::from(p)).collect();
-        Prepared { floor_y: lo.y, mesh, orientation, piece: Arc::new(piece), part_names, radius, hull }
+        Prepared { floor_y: lo.y, mesh, orientation, piece: Arc::new(piece), part_names, radius, hull, default_stones: vec![] }
     }
 
     /// Material slot per triangle for a set of stone rules: the rule index
@@ -106,14 +109,27 @@ impl Prepared {
         let mut gems: Vec<String> = vec![];
         let mut tri = vec![0u16; self.mesh.triangles.len()];
         for part in &self.mesh.parts {
-            let mut gem = rules.iter().find(|r| glob(&r.part, &part.name)).map(|r| r.gem.clone());
+            let mut gem = rules
+                .iter()
+                .chain(self.default_stones.iter())
+                .find(|r| glob(&r.part, &part.name))
+                .map(|r| r.gem.clone());
             if gem.is_none() {
                 for cand in [part.material.as_deref(), Some(part.name.as_str())].into_iter().flatten() {
-                    let c = cand.to_ascii_lowercase();
-                    if let Some(g) = argent_spectra::gems::names().iter().find(|g| c.contains(*g)) {
-                        gem = Some(g.to_string());
+                    gem = gem_from_text(cand);
+                    if gem.is_some() {
                         break;
                     }
+                }
+            }
+            if gem.is_none() {
+                // Generic stone parts ("gem", "stone_03") default to diamond.
+                let generic = |t: &str| {
+                    let t = t.to_ascii_lowercase();
+                    t == "gem" || t == "gems" || t.starts_with("stone") || t.starts_with("gem_")
+                };
+                if part.material.as_deref().is_some_and(generic) || generic(&part.name) {
+                    gem = Some("diamond".into());
                 }
             }
             if let Some(g) = gem {
@@ -175,6 +191,28 @@ impl Prepared {
         }
         frame(&pts, view, lens, aspect)
     }
+}
+
+/// Find a gem name in free text ("Shoulder emerald / 25 degrees" → emerald).
+/// Longest match wins so "black_opal" beats "opal" and "pink_sapphire" beats
+/// "sapphire".
+pub fn gem_from_text(text: &str) -> Option<String> {
+    let t = text.to_ascii_lowercase().replace([' ', '-'], "_");
+    let mut best: Option<&str> = None;
+    for g in argent_spectra::gems::names() {
+        if t.contains(g) && best.is_none_or(|b| g.len() > b.len()) {
+            best = Some(g);
+        }
+    }
+    if best.is_none() {
+        // Common words that aren't table keys.
+        for (w, g) in [("opal", "opal"), ("cz", "cubic_zirconia"), ("zircon", "cubic_zirconia"), ("onyx", "onyx"), ("garnet", "garnet")] {
+            if t.split(|c: char| !c.is_ascii_alphanumeric()).any(|x| x == w) {
+                return Some(g.into());
+            }
+        }
+    }
+    best.map(str::to_string)
 }
 
 /// Case-insensitive glob with `*`.

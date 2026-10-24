@@ -19,6 +19,11 @@ pub enum Bsdf {
     Dielectric { eta: Spec },
     /// Absorbs everything (flags, light housings).
     Black,
+    /// Precious opal: a domain of ordered silica spheres reflecting a narrow
+    /// band by Bragg diffraction (`λ = 2 d n cosθ`) about its lattice normal
+    /// `n` (local frame), mixed with the dark or milky body under a silica
+    /// coat. `w` is the domain's share of the mixture.
+    Opal { n: V3, ggx: Ggx, spacing_nm: f32, strength: f32, lambda: Spec, body: Spec, w: f32 },
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -75,6 +80,14 @@ impl Bsdf {
                 }
                 albedo * FRAC_1_PI
             }
+            Bsdf::Opal { n, ggx, spacing_nm, strength, lambda, body, w } => {
+                if wo.z <= 0.0 || wi.z <= 0.0 {
+                    return Spec::ZERO;
+                }
+                let base = Bsdf::Coated { ggx: Ggx::from_roughness(0.12), eta: 1.45, base: body }.eval(wo, wi);
+                let flake = opal_flake_eval(n, ggx, spacing_nm, strength, lambda, wo, wi);
+                base * (1.0 - w) + flake * w
+            }
             Bsdf::Dielectric { .. } | Bsdf::Black => Spec::ZERO,
         }
     }
@@ -103,6 +116,13 @@ impl Bsdf {
                 } else {
                     wi.z * FRAC_1_PI
                 }
+            }
+            Bsdf::Opal { n, ggx, body, w, .. } => {
+                if wo.z <= 0.0 || wi.z <= 0.0 {
+                    return 0.0;
+                }
+                let pb = Bsdf::Coated { ggx: Ggx::from_roughness(0.12), eta: 1.45, base: body }.pdf(wo, wi);
+                pb * (1.0 - w) + opal_flake_pdf(n, ggx, wo, wi) * w
             }
             Bsdf::Dielectric { .. } | Bsdf::Black => 0.0,
         }
@@ -189,6 +209,31 @@ impl Bsdf {
                     terminate_secondary: dispersive,
                 })
             }
+            Bsdf::Opal { n, ggx, w, body, .. } => {
+                if wo.z <= 0.0 {
+                    return None;
+                }
+                let wi = if u0 < w {
+                    let fr = crate::geom::Frame::new(n);
+                    let wol = fr.to_local(wo);
+                    if wol.z <= 0.0 {
+                        return None;
+                    }
+                    let h = ggx.sample_h(wol, u1, u2);
+                    fr.to_world(crate::geom::reflect(wol, h))
+                } else {
+                    let base = Bsdf::Coated { ggx: Ggx::from_roughness(0.12), eta: 1.45, base: body };
+                    base.sample(wo, (u0 - w) / (1.0 - w).max(1e-6), u1, u2)?.wi
+                };
+                if wi.z <= 0.0 {
+                    return None;
+                }
+                let pdf = self.pdf(wo, wi);
+                if pdf <= 0.0 {
+                    return None;
+                }
+                Some(Sample { wi, f: self.eval(wo, wi), pdf, delta: false, transmit: false, terminate_secondary: false })
+            }
             Bsdf::Black => None,
         }
     }
@@ -200,9 +245,50 @@ impl Bsdf {
             Bsdf::Coated { base, eta, .. } => base * (1.0 - fresnel::dielectric(1.0, eta)) + Spec::splat(fresnel::dielectric(1.0, eta)),
             Bsdf::Diffuse { albedo } => albedo,
             Bsdf::Dielectric { .. } => Spec::ONE,
+            Bsdf::Opal { body, .. } => body,
             Bsdf::Black => Spec::ZERO,
         }
     }
+}
+
+/// Bragg peak: reflectance of an opal domain at wavelength `l` for a
+/// half-vector making angle θ with the lattice normal.
+#[inline]
+fn bragg(spacing_nm: f32, cos_t: f32, l: f32) -> f32 {
+    // First-order peak for silica spheres in silica-air (n_eff ≈ 1.37).
+    let peak = 2.0 * spacing_nm * 1.37 * cos_t.clamp(0.0, 1.0);
+    let sigma = 0.045 * peak.max(1.0);
+    let x = (l - peak) / sigma;
+    (-0.5 * x * x).exp()
+}
+
+fn opal_flake_eval(n: V3, ggx: Ggx, spacing: f32, strength: f32, lambda: Spec, wo: V3, wi: V3) -> Spec {
+    let fr = crate::geom::Frame::new(n);
+    let (a, b) = (fr.to_local(wo), fr.to_local(wi));
+    if a.z <= 0.0 || b.z <= 0.0 {
+        return Spec::ZERO;
+    }
+    let h = (a + b).normalize();
+    let g = ggx.d(h) * ggx.g2(a, b) / (4.0 * a.z * b.z);
+    // Bragg condition on the angle between the incident light and the planes.
+    let cos_t = a.dot(h);
+    let mut r = [0.0; argent_spectra::N];
+    for i in 0..argent_spectra::N {
+        r[i] = strength * bragg(spacing, cos_t, lambda[i]);
+    }
+    // The flake lobe lives in the lattice frame; convert its cosine to the
+    // surface frame the integrator multiplies by.
+    Spec(r) * (g * b.z / wi.z.max(1e-6))
+}
+
+fn opal_flake_pdf(n: V3, ggx: Ggx, wo: V3, wi: V3) -> f32 {
+    let fr = crate::geom::Frame::new(n);
+    let (a, b) = (fr.to_local(wo), fr.to_local(wi));
+    if a.z <= 0.0 || b.z <= 0.0 {
+        return 0.0;
+    }
+    let h = (a + b).normalize();
+    ggx.d_visible(a, h) / (4.0 * a.dot(h).max(1e-8))
 }
 
 #[inline]

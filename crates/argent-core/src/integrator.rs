@@ -1,7 +1,6 @@
 //! Spectral unidirectional path tracer with next-event estimation and
 //! multiple importance sampling on the softboxes.
 
-use crate::bsdf::Bsdf;
 use crate::geom::{offset_origin, Frame, Ray, V3};
 use crate::sampler::Sampler;
 use crate::scene::{Hit, Scene};
@@ -66,14 +65,14 @@ pub fn trace(scene: &Scene, mut ray: Ray, wl: &mut Wavelengths, s: &mut Sampler,
             let sig = m.sample(wl);
             beta *= (-sig * h.t()).exp();
         }
-        let (p, ng, ns, mat_id, cavity) = match hit {
+        let (p, p_obj, ng, ns, mat_id, cavity) = match hit {
             None => {
                 add_clamped(&mut l, beta * scene.env.eval(ray.d, wl), clamp);
                 break;
             }
             Some(Hit::Panel { t, index }) => {
                 let panel = &scene.panels[index];
-                let le = panel.le(ray.d, wl);
+                let le = panel.le(ray.at(t), ray.d, wl);
                 if !le.is_black() {
                     if specular {
                         add_clamped(&mut l, beta * le, clamp);
@@ -93,15 +92,14 @@ pub fn trace(scene: &Scene, mut ray: Ray, wl: &mut Wavelengths, s: &mut Sampler,
                     break;
                 }
                 let n = if ray.d.y < 0.0 { floor_n } else { -floor_n };
-                (p, n, n, floor.material as u16, 0.0)
+                (p, p, n, n, floor.material as u16, 0.0)
             }
-            Some(Hit::Piece { p, ng, ns, material, cavity, .. }) => (p, ng, ns, material, cavity),
+            Some(Hit::Piece { p, p_obj, ng, ns, material, cavity, .. }) => (p, p_obj, ng, ns, material, cavity),
         };
 
         let mat = &scene.materials[mat_id as usize];
-        let bsdf = mat.bsdf(wl, cavity, s.next());
         let wo_w = -ray.d;
-        let transmissive = matches!(bsdf, Bsdf::Dielectric { .. });
+        let transmissive = mat.is_transmissive();
         // Two-sided shading for opaque surfaces; dielectrics keep the outward
         // normal so they know whether the ray is entering or leaving.
         let (mut nsu, ngu) = if !transmissive && ng.dot(wo_w) < 0.0 { (-ns, -ng) } else { (ns, ng) };
@@ -110,6 +108,8 @@ pub fn trace(scene: &Scene, mut ray: Ray, wl: &mut Wavelengths, s: &mut Sampler,
         }
         let frame = Frame::new(nsu);
         let wo = frame.to_local(wo_w);
+        let ctx = crate::material::HitCtx { p_obj, n_world: nsu, frame: &frame, turn_deg: scene.turntable_deg };
+        let bsdf = mat.bsdf(wl, cavity, s.next(), &ctx);
         if depth == 0 {
             guides.albedo = crate::spectral_rgb_guide(mat, cavity);
             guides.normal = nsu.into();
@@ -135,7 +135,7 @@ pub fn trace(scene: &Scene, mut ray: Ray, wl: &mut Wavelengths, s: &mut Sampler,
                         let w = p_light * p_light / (p_light * p_light + p_bsdf * p_bsdf);
                         let origin = offset_origin(p, ngu, dir);
                         if scene.visible(origin, lp, li) {
-                            let le = panel.le(dir, wl);
+                            let le = panel.le(lp, dir, wl);
                             let c = beta * f * le * (wi.z.abs() * w / p_light);
                             add_clamped(&mut l, c, if rough_seen { Some(ps.clamp_indirect) } else { None });
                         }

@@ -17,7 +17,7 @@ impl View {
     pub fn named(name: &str) -> Option<View> {
         let v = |a, e, f| View { azimuth_deg: a, elevation_deg: e, fill: f };
         Some(match name.trim().to_ascii_lowercase().as_str() {
-            "hero" => v(28.0, 16.0, 0.72),
+            "hero" => v(34.0, 26.0, 0.72),
             "front" | "face" => v(0.0, 6.0, 0.70),
             "side" | "profile" => v(90.0, 6.0, 0.72),
             "top" => v(0.0, 62.0, 0.70),

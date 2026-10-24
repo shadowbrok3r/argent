@@ -123,6 +123,49 @@ fn mul(a: [[f32; 3]; 3], b: [[f32; 3]; 3]) -> [[f32; 3]; 3] {
     r
 }
 
+/// RingDesigner exports stones beside the metal: `ring.stl` +
+/// `ring_stones.obj` (+ `ring_stones.json` naming each stone). Pull the
+/// companion in automatically when only the metal was given.
+pub fn with_companions(files: &[PathBuf]) -> Vec<PathBuf> {
+    let mut out = files.to_vec();
+    if files.len() == 1 {
+        let f = &files[0];
+        if let (Some(dir), Some(stem)) = (f.parent(), f.file_stem()) {
+            let comp = dir.join(format!("{}_stones.obj", stem.to_string_lossy()));
+            if comp.exists() && !out.contains(&comp) {
+                eprintln!("  + stones: {}", comp.display());
+                out.push(comp);
+            }
+        }
+    }
+    out
+}
+
+/// Stone rules from RingDesigner's `<stem>_stones.json` sidecars: each
+/// record's `object` gets the gem named in its `label`.
+pub fn sidecar_stone_rules(files: &[PathBuf]) -> Vec<StoneRule> {
+    let mut rules = vec![];
+    for f in with_companions(files) {
+        let Some(name) = f.file_name().map(|n| n.to_string_lossy().into_owned()) else { continue };
+        let json = if name.ends_with("_stones.obj") {
+            f.with_extension("json")
+        } else {
+            continue;
+        };
+        let Ok(text) = std::fs::read_to_string(&json) else { continue };
+        let Ok(v) = serde_json::from_str::<serde_json::Value>(&text) else { continue };
+        for st in v.get("stones").and_then(|s| s.as_array()).into_iter().flatten() {
+            let (Some(obj), Some(label)) = (st.get("object").and_then(|x| x.as_str()), st.get("label").and_then(|x| x.as_str())) else {
+                continue;
+            };
+            if let Some(g) = argent_core::shot::gem_from_text(label) {
+                rules.push(StoneRule { part: obj.to_string(), gem: g });
+            }
+        }
+    }
+    rules
+}
+
 pub fn piece_name(files: &[PathBuf]) -> String {
     files.first().and_then(|f| f.file_stem()).map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|| "piece".into())
 }
@@ -138,12 +181,13 @@ pub fn prepare(args: &PieceArgs) -> Result<Prepared> {
         u => bail!("unknown units {u}"),
     };
     let opts = LoadOptions { unit_scale, ..Default::default() };
-    let mesh = if args.files.len() == 1 {
-        argent_mesh::load(&args.files[0], &opts)
+    let files = with_companions(&args.files);
+    let mesh = if files.len() == 1 {
+        argent_mesh::load(&files[0], &opts)
     } else {
-        argent_mesh::load_many(&args.files, &opts)
+        argent_mesh::load_many(&files, &opts)
     }
-    .with_context(|| format!("loading {:?}", args.files))?;
+    .with_context(|| format!("loading {:?}", files))?;
     let t_load = t0.elapsed();
     let mut pose = if args.no_orient {
         let (lo, hi) = mesh.bounds();
@@ -162,7 +206,11 @@ pub fn prepare(args: &PieceArgs) -> Result<Prepared> {
         }
         pose = Some(Pose { center: base.center, rotation: mul(rot_matrix(extra), base.rotation) });
     }
-    let p = Prepared::new(mesh, pose);
+    let mut p = Prepared::new(mesh, pose);
+    p.default_stones = sidecar_stone_rules(&args.files);
+    if !p.default_stones.is_empty() {
+        eprintln!("  stones from sidecar: {}", p.default_stones.iter().map(|r| format!("{}={}", r.part, r.gem)).collect::<Vec<_>>().join(", "));
+    }
     eprintln!(
         "piece: {} triangles, radius {:.1} mm, {:?} (load {:.2?}, prepare {:.2?})",
         p.mesh.triangles.len(),
