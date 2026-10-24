@@ -443,8 +443,12 @@ pub fn render(args: &PieceArgs, shot: &ShotArgs, out: &Path, turn: f32) -> Resul
     let v = view(shot)?;
     let q = quality(shot)?;
     let mut scene = p.scene(&lk);
-    scene.turntable_deg = turn;
-    let cam = if turn != 0.0 { p.turntable_camera(&v, &lens(shot), q.width as f32 / q.height as f32) } else { p.camera(&v, &lens(shot), q.width as f32 / q.height as f32) };
+    let (cam, base_turn) = if turn != 0.0 {
+        (p.turntable_camera(&v, &lens(shot), q.width as f32 / q.height as f32), -v.azimuth_deg)
+    } else {
+        p.shot(&v, &lens(shot), q.width as f32 / q.height as f32)
+    };
+    scene.turntable_deg = base_turn + turn;
     let t = Instant::now();
     let img = render_image(&scene, &cam, &q, 7)?;
     let png = argent_post::develop(&img, &grade(&lk));
@@ -567,7 +571,7 @@ pub fn render_reel(
     let frame_setup = |i: u32| -> (argent_core::camera::Camera, f32, Option<argent_core::light::Panel>) {
         let t = i as f32 / n as f32;
         match rig {
-            Rig::Turntable => (turn_cam.clone(), 360.0 * t, None),
+            Rig::Turntable => (turn_cam.clone(), -v.azimuth_deg + 360.0 * t, None),
             Rig::Reveal => {
                 const SPLIT: f32 = 0.38;
                 if t < SPLIT {
@@ -577,14 +581,15 @@ pub fn render_reel(
                     vv.azimuth_deg = v.azimuth_deg - 18.0 * (1.0 - k);
                     vv.elevation_deg = v.elevation_deg + 6.0 * (1.0 - k);
                     let l = argent_core::camera::Lens { focal_mm: lens0.focal_mm, f_stop: 2.8 + 30.0 * k * k };
-                    let mut cam = p.camera(&vv, &l, aspect);
+                    let (mut cam, turn) = p.shot(&vv, &l, aspect);
                     if k > 0.97 {
                         cam.lens_radius = 0.0;
                     }
-                    (cam, 0.0, None)
+                    (cam, turn, None)
                 } else {
                     let k = ease((t - SPLIT) / (1.0 - SPLIT));
-                    (p.camera(&v, &lens0, aspect), 360.0 * k, None)
+                    let (cam, turn) = p.shot(&v, &lens0, aspect);
+                    (cam, turn + 360.0 * k, None)
                 }
             }
             Rig::Sweep => {
@@ -600,7 +605,7 @@ pub fn render_reel(
                     argent_core::geom::V3::Y,
                     Some(argent_core::studio::emitter(6000.0, 14.0)),
                 );
-                (turn_cam.clone(), -20.0 + 40.0 * k, Some(strip))
+                (turn_cam.clone(), -v.azimuth_deg - 20.0 + 40.0 * k, Some(strip))
             }
         }
     };
@@ -715,7 +720,7 @@ fn cut_to_drop(track: &Path, len: f32, at: f32) -> Result<PathBuf> {
     let measure = std::process::Command::new("ffmpeg")
         .args(["-hide_banner", "-nostats", "-ss", &format!("{start:.3}"), "-t", &format!("{len:.3}"), "-i"])
         .arg(track)
-        .args(["-af", &format!("{fades},loudnorm=I=-14:TP=-1.5:LRA=11:print_format=json"), "-f", "null", "-"])
+        .args(["-af", &format!("{fades},loudnorm=I=-14:TP=-2:LRA=11:print_format=json"), "-f", "null", "-"])
         .output()?;
     let err = String::from_utf8_lossy(&measure.stderr);
     let json = err.rfind('{').and_then(|a| err[a..].find('}').map(|b| &err[a..a + b + 1]));
@@ -725,10 +730,14 @@ fn cut_to_drop(track: &Path, len: f32, at: f32) -> Result<PathBuf> {
     };
     let norm = match (field("input_i"), field("input_tp"), field("input_lra"), field("input_thresh"), field("target_offset")) {
         (Some(i), Some(tp), Some(lra), Some(th), Some(off)) => format!(
-            ",loudnorm=I=-14:TP=-1.5:LRA=11:measured_I={i}:measured_TP={tp}:measured_LRA={lra}:measured_thresh={th}:offset={off}:linear=true"
+            ",loudnorm=I=-14:TP=-2:LRA=11:measured_I={i}:measured_TP={tp}:measured_LRA={lra}:measured_thresh={th}:offset={off}:linear=true"
         ),
-        _ => ",loudnorm=I=-14:TP=-1.5:LRA=11".into(),
+        _ => ",loudnorm=I=-14:TP=-2:LRA=11".into(),
     };
+    // AAC encoding overshoots inter-sample peaks by ~0.5 dB; a -2.5 dBFS
+    // sample-peak limiter after the gain keeps the encoded true peak under
+    // Forge's -1 dBTP.
+    let norm = format!("{norm},alimiter=limit=0.75:attack=2:release=40:level=false");
     let status = std::process::Command::new("ffmpeg")
         .args(["-hide_banner", "-loglevel", "error", "-y", "-ss", &format!("{start:.3}"), "-t", &format!("{len:.3}"), "-i"])
         .arg(track)
@@ -738,7 +747,7 @@ fn cut_to_drop(track: &Path, len: f32, at: f32) -> Result<PathBuf> {
     if !status.success() {
         bail!("ffmpeg cut failed");
     }
-    eprintln!("  audio: drop at {drop:.2}s lands at {at:.2}s of the reel (track from {start:.2}s), normalized to -14 LUFS");
+    eprintln!("  audio: drop at {drop:.2}s lands at {at:.2}s of the reel (track from {start:.2}s), normalized to -14 LUFS, true peak under -1 dBTP");
     Ok(out)
 }
 
@@ -820,7 +829,9 @@ pub fn sheet_prepared(p: &Prepared, name: &str, shot: &ShotArgs, out: &Path, met
         for vname in views {
             s.view = vname.clone();
             let v = view(&s)?;
-            let cam = p.camera(&v, &lens(&s), q.width as f32 / q.height as f32);
+            let (cam, turn) = p.shot(&v, &lens(&s), q.width as f32 / q.height as f32);
+            let mut scene = scene.clone();
+            scene.turntable_deg = turn;
             let t = Instant::now();
             let img = render_image(&scene, &cam, &q, 3)?;
             let png = argent_post::develop(&img, &grade(&lk));

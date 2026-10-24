@@ -234,12 +234,31 @@ impl Prepared {
     }
 
     /// Camera for a still, focused on the nearest surface near the centre.
+    /// The studio stays put relative to this camera's azimuth only when the
+    /// caller also turns the piece; prefer [`Prepared::shot`].
     pub fn camera(&self, view: &View, lens: &Lens, aspect: f32) -> Camera {
         let mut cam = frame(&self.hull, view, lens, aspect);
         if cam.lens_radius > 0.0 {
             self.autofocus(&mut cam, 0.0);
         }
         cam
+    }
+
+    /// Camera and turntable angle for a still, the way a product
+    /// photographer works: the lights and camera stay where the rig was
+    /// designed (camera on the rig's front), and the piece turns to show
+    /// the requested side. Returns `(camera, turn_deg)` for
+    /// `Scene::turntable_deg`.
+    pub fn shot(&self, view: &View, lens: &Lens, aspect: f32) -> (Camera, f32) {
+        let turn = -view.azimuth_deg;
+        let mut front = *view;
+        front.azimuth_deg = 0.0;
+        let pts: Vec<V3> = self.hull.iter().map(|&p| crate::geom::rot_y(p, turn)).collect();
+        let mut cam = frame(&pts, &front, lens, aspect);
+        if cam.lens_radius > 0.0 {
+            self.autofocus(&mut cam, turn);
+        }
+        (cam, turn)
     }
 
     /// Autofocus: probe the piece with a few rays around the frame centre
@@ -264,14 +283,18 @@ impl Prepared {
         }
     }
 
-    /// Camera that keeps the piece in frame for a full turn.
+    /// Camera that keeps the piece in frame for a full turn, on the rig's
+    /// front like [`Prepared::shot`]; start the turn at `-view.azimuth_deg`
+    /// so the first frame matches the still.
     pub fn turntable_camera(&self, view: &View, lens: &Lens, aspect: f32) -> Camera {
         let mut pts = Vec::with_capacity(self.hull.len() * 24);
         for k in 0..24 {
             let a = k as f32 * 15.0;
             pts.extend(self.hull.iter().map(|&p| crate::geom::rot_y(p, a)));
         }
-        frame(&pts, view, lens, aspect)
+        let mut front = *view;
+        front.azimuth_deg = 0.0;
+        frame(&pts, &front, lens, aspect)
     }
 }
 
