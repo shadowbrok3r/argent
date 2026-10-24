@@ -128,6 +128,11 @@ impl Default for PieceArgs {
     }
 }
 
+/// Detail views frame the head, not the whole piece.
+fn is_detail(view: &str) -> bool {
+    matches!(view.trim().to_ascii_lowercase().as_str(), "detail" | "macro")
+}
+
 pub fn parse_size(s: &str) -> Result<(u32, u32)> {
     Ok(match s {
         "story" | "reel" | "vertical" => (1080, 1920),
@@ -480,10 +485,13 @@ pub fn render(args: &PieceArgs, shot: &ShotArgs, out: &Path, turn: f32) -> Resul
     let v = view(shot)?;
     let q = quality(shot)?;
     let mut scene = p.scene(&lk);
+    let aspect = q.width as f32 / q.height as f32;
     let (cam, base_turn) = if turn != 0.0 {
-        (p.turntable_camera(&v, &lens(shot), q.width as f32 / q.height as f32), -v.azimuth_deg)
+        (p.turntable_camera(&v, &lens(shot), aspect), -v.azimuth_deg)
+    } else if is_detail(&shot.view) {
+        p.shot_region(&v, &lens(shot), aspect, 0.42)
     } else {
-        p.shot(&v, &lens(shot), q.width as f32 / q.height as f32)
+        p.shot(&v, &lens(shot), aspect)
     };
     scene.turntable_deg = base_turn + turn;
     let t = Instant::now();
@@ -866,7 +874,11 @@ pub fn sheet_prepared(p: &Prepared, name: &str, shot: &ShotArgs, out: &Path, met
         for vname in views {
             s.view = vname.clone();
             let v = view(&s)?;
-            let (cam, turn) = p.shot(&v, &lens(&s), q.width as f32 / q.height as f32);
+            let (cam, turn) = if is_detail(vname) {
+                p.shot_region(&v, &lens(&s), q.width as f32 / q.height as f32, 0.42)
+            } else {
+                p.shot(&v, &lens(&s), q.width as f32 / q.height as f32)
+            };
             let mut scene = scene.clone();
             scene.turntable_deg = turn;
             let t = Instant::now();

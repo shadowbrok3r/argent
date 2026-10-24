@@ -294,6 +294,24 @@ impl Prepared {
         }
     }
 
+    /// Like [`Prepared::shot`] but framing only the top `top_fraction` of
+    /// the piece's height: a ring's head (table, setting, skull), not the
+    /// empty bore at the middle of its bounding box. For macro detail shots.
+    pub fn shot_region(&self, view: &View, lens: &Lens, aspect: f32, top_fraction: f32) -> (Camera, f32) {
+        let turn = -view.azimuth_deg;
+        let mut front = *view;
+        front.azimuth_deg = 0.0;
+        let (lo, hi) = self.hull.iter().fold((f32::MAX, f32::MIN), |(a, b), p| (a.min(p.y), b.max(p.y)));
+        let cut = hi - top_fraction.clamp(0.05, 1.0) * (hi - lo);
+        let pts: Vec<V3> = self.hull.iter().filter(|p| p.y >= cut).map(|&p| crate::geom::rot_y(p, turn)).collect();
+        let pts = if pts.len() < 8 { self.hull.iter().map(|&p| crate::geom::rot_y(p, turn)).collect() } else { pts };
+        let mut cam = frame(&pts, &front, lens, aspect);
+        if cam.lens_radius > 0.0 {
+            self.autofocus(&mut cam, turn);
+        }
+        (cam, turn)
+    }
+
     /// Camera that keeps the piece in frame for a full turn, on the rig's
     /// front like [`Prepared::shot`]; start the turn at `-view.azimuth_deg`
     /// so the first frame matches the still.

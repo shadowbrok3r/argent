@@ -24,7 +24,8 @@ impl View {
             "three-quarter" | "34" => v(45.0, 24.0, 0.72),
             "back" => v(160.0, 16.0, 0.72),
             "low" => v(22.0, 3.0, 0.72),
-            "detail" | "macro" => v(18.0, 14.0, 1.25),
+            // Framed on the head by `Prepared::shot_region` (see the CLI).
+            "detail" | "macro" => v(14.0, 34.0, 0.92),
             _ => return None,
         })
     }

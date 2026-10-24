@@ -11,11 +11,14 @@ use argent_core::views::View;
 use argent_spectra::alloys::Alloy;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use std::path::{Path, PathBuf};
 
 /// Preview pixel budget (540×960 for a story frame).
 pub const PREVIEW_PIXELS: f64 = 540.0 * 960.0;
 
-pub const GRADES: &[&str] = &["punchy", "base", "golden"];
+/// Tone maps: Khronos PBR Neutral (faithful product colour, the default),
+/// the AgX looks, ACES (as `argent_core::shot::grade`).
+pub const GRADES: &[&str] = &["neutral", "punchy", "base", "golden", "aces"];
 
 /// Named output formats: the live preview renders at the chosen format's
 /// aspect, and a still renders at its full size.
@@ -46,9 +49,16 @@ pub struct Params {
     pub studio: String,
     /// Exposure compensation, EV.
     pub exposure: f32,
-    /// AgX look: `punchy`, `base`, `golden`.
+    /// Tone map: `neutral` (default), `punchy`, `base`, `golden` (AgX looks), `aces`.
     pub grade: String,
     pub stones: Vec<Stone>,
+    /// Light with this equirectangular HDRI (a library `.hdr`) instead of
+    /// the studio's softboxes; the studio's floor stays. `null` = studio lights.
+    pub hdri: Option<String>,
+    /// HDRI turned about the vertical, degrees.
+    pub hdri_rotate: f32,
+    /// HDRI brightness, EV.
+    pub hdri_exposure: f32,
     /// Preset the camera came from, or `custom` once orbited.
     pub view: String,
     pub azimuth: f32,
@@ -59,13 +69,14 @@ pub struct Params {
     pub turntable: f32,
     /// Lens focal length, mm (full frame).
     pub focal: f32,
-    /// f-number, 0 = everything sharp.
-    pub fstop: f32,
+    /// f-number, 0 = everything sharp, `null` = auto (as the CLI: f/16 in
+    /// the mood studios, sharp in `white`).
+    pub fstop: Option<f32>,
     /// `story`, `listing`, `wide` or `WxH`.
     pub format: String,
     /// Denoise the live preview.
     pub denoise: bool,
-    /// The live view stops refining here.
+    /// The live view stops refining here (or earlier, once frames stop changing).
     pub max_spp: u32,
 }
 
@@ -82,16 +93,19 @@ impl Default for Params {
             exposure: lk.exposure_ev,
             grade: lk.grade.clone(),
             stones: vec![],
+            hdri: None,
+            hdri_rotate: 0.0,
+            hdri_exposure: 0.0,
             view: "hero".into(),
             azimuth: v.azimuth_deg,
             elevation: v.elevation_deg,
             fill: v.fill,
             turntable: 0.0,
             focal: lens.focal_mm,
-            fstop: lens.f_stop,
+            fstop: None,
             format: "story".into(),
             denoise: true,
-            max_spp: 512,
+            max_spp: 256,
         }
     }
 }
@@ -113,6 +127,10 @@ pub struct Patch {
     pub stones: Option<Vec<Stone>>,
     /// Set one part's gem (`"gem": "metal"` clears it).
     pub stone: Option<Stone>,
+    /// Library `.hdr` (path or id) to light with; `"none"` = studio lights.
+    pub hdri: Option<String>,
+    pub hdri_rotate: Option<f32>,
+    pub hdri_exposure: Option<f32>,
     /// A preset name: sets azimuth, elevation and fill.
     pub view: Option<String>,
     pub azimuth: Option<f32>,
@@ -120,7 +138,8 @@ pub struct Patch {
     pub fill: Option<f32>,
     pub turntable: Option<f32>,
     pub focal: Option<f32>,
-    pub fstop: Option<f32>,
+    /// A number (0 = sharp) or `"auto"`.
+    pub fstop: Option<Value>,
     pub format: Option<String>,
     pub denoise: Option<bool>,
     pub max_spp: Option<u32>,
@@ -205,7 +224,10 @@ impl Params {
             n.exposure = finite(v, "exposure")?.clamp(-8.0, 8.0);
         }
         if let Some(g) = &p.grade {
-            let g = g.trim().to_ascii_lowercase();
+            let mut g = g.trim().to_ascii_lowercase();
+            if g == "agx" {
+                g = "punchy".into();
+            }
             if !GRADES.contains(&g.as_str()) {
                 bail!("unknown grade {g:?}; known: {}", GRADES.join(", "));
             }
@@ -234,6 +256,24 @@ impl Params {
                 // Most specific first: an exact part beats an earlier glob.
                 n.stones.insert(0, Stone { part, gem: validate_gem(&s.gem)? });
             }
+        }
+        if let Some(h) = &p.hdri {
+            n.hdri = if is_metal_word(h) || h.eq_ignore_ascii_case("studio") {
+                None
+            } else {
+                // The server resolves (and confines) HDRI paths before applying.
+                let path = Path::new(h);
+                if !path.is_absolute() || !path.is_file() {
+                    bail!("hdri {h:?} is not a library .hdr file");
+                }
+                Some(h.clone())
+            };
+        }
+        if let Some(r) = p.hdri_rotate {
+            n.hdri_rotate = finite(r, "hdri_rotate")?.rem_euclid(360.0);
+        }
+        if let Some(e) = p.hdri_exposure {
+            n.hdri_exposure = finite(e, "hdri_exposure")?.clamp(-6.0, 6.0);
         }
         if let Some(name) = &p.view {
             let key = view_name(name).with_context(|| format!("unknown view {name:?}; known: {}", View::NAMES.join(", ")))?;
@@ -274,9 +314,15 @@ impl Params {
         if let Some(f) = p.focal {
             n.focal = finite(f, "focal")?.clamp(18.0, 600.0);
         }
-        if let Some(f) = p.fstop {
-            let f = finite(f, "fstop")?;
-            n.fstop = if f <= 0.0 { 0.0 } else { f.clamp(0.7, 128.0) };
+        if let Some(f) = &p.fstop {
+            n.fstop = match f {
+                Value::String(s) if s.eq_ignore_ascii_case("auto") => None,
+                Value::Number(x) => {
+                    let f = finite(x.as_f64().unwrap_or(f64::NAN) as f32, "fstop")?;
+                    if f < 0.0 { None } else if f == 0.0 { Some(0.0) } else { Some(f.clamp(0.7, 128.0)) }
+                }
+                _ => bail!("fstop must be a number (0 = everything sharp) or \"auto\""),
+            };
         }
         if let Some(f) = &p.format {
             n.format = parse_format(f)?.0;
@@ -313,6 +359,10 @@ impl Params {
             studio: Studio::from_name(&self.studio).unwrap_or(Studio::Noir),
             exposure_ev: self.exposure,
             grade: self.grade.clone(),
+            hdri: self.hdri.clone(),
+            hdri_rotate: self.hdri_rotate,
+            hdri_exposure: self.hdri_exposure,
+            ..Default::default()
         }
     }
 
@@ -320,8 +370,14 @@ impl Params {
         View { azimuth_deg: self.azimuth, elevation_deg: self.elevation, fill: self.fill }
     }
 
+    /// The f-number used: `fstop`, or the CLI's default for the studio
+    /// (keep in step with `jobs::lens`).
+    pub fn effective_fstop(&self) -> f32 {
+        self.fstop.unwrap_or(if Studio::from_name(&self.studio) == Some(Studio::White) { 0.0 } else { 16.0 })
+    }
+
     pub fn lens(&self) -> Lens {
-        Lens { focal_mm: self.focal, f_stop: self.fstop }
+        Lens { focal_mm: self.focal, f_stop: self.effective_fstop() }
     }
 
     /// CLI shot arguments for a final render of this set.
@@ -343,23 +399,66 @@ impl Params {
             grade: self.grade.clone(),
             no_denoise: false,
             max_depth: 32,
+            hdri: self.hdri.as_ref().map(PathBuf::from),
+            hdri_rotate: self.hdri_rotate,
+            hdri_exposure: self.hdri_exposure,
         }
     }
 
     /// What the scene depends on (rebuild + restart when it changes).
-    pub fn scene_key(&self) -> (String, u32, u32, String, Vec<Stone>) {
-        (self.metal.clone(), self.patina.to_bits(), self.roughness.to_bits(), self.studio.clone(), self.stones.clone())
+    pub fn scene_key(&self) -> SceneKey {
+        SceneKey {
+            metal: self.metal.clone(),
+            finish: [self.patina.to_bits(), self.roughness.to_bits()],
+            studio: self.studio.clone(),
+            stones: self.stones.clone(),
+            hdri: self.hdri.clone(),
+            hdri_tweak: [self.hdri_rotate.to_bits(), self.hdri_exposure.to_bits()],
+        }
     }
 
     /// What the camera depends on (restart when it changes).
     pub fn camera_key(&self) -> [u32; 8] {
         let (w, h) = self.preview_size();
-        [self.azimuth.to_bits(), self.elevation.to_bits(), self.fill.to_bits(), self.turntable.to_bits(), self.focal.to_bits(), self.fstop.to_bits(), w, h]
+        [
+            self.azimuth.to_bits(),
+            self.elevation.to_bits(),
+            self.fill.to_bits(),
+            self.turntable.to_bits(),
+            self.focal.to_bits(),
+            self.effective_fstop().to_bits(),
+            w,
+            h,
+        ]
     }
 
     /// What only development depends on (re-develop, keep the samples).
     pub fn develop_key(&self) -> (u32, String, bool) {
         (self.exposure.to_bits(), self.grade.clone(), self.denoise)
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct SceneKey {
+    metal: String,
+    finish: [u32; 2],
+    studio: String,
+    stones: Vec<Stone>,
+    hdri: Option<String>,
+    hdri_tweak: [u32; 2],
+}
+
+/// Camera and piece turn for a frame of the set: the same rule as
+/// `argent render` (`jobs::render`), so the live view is the still. The
+/// camera stays on the rig's front and the piece turns to show the side
+/// asked for; with a turntable angle the camera frames the full turn.
+pub fn shot_camera(p: &argent_core::shot::Prepared, params: &Params, aspect: f32) -> (argent_core::camera::Camera, f32) {
+    let v = params.view();
+    let lens = params.lens();
+    if params.turntable != 0.0 {
+        (p.turntable_camera(&v, &lens, aspect), -v.azimuth_deg + params.turntable)
+    } else {
+        p.shot(&v, &lens, aspect)
     }
 }
 
@@ -409,7 +508,7 @@ pub fn options() -> Value {
         "grades": GRADES,
         "formats": FORMATS.iter().map(|(k, name, w, h)| json!({"key": k, "name": name, "w": w, "h": h})).collect::<Vec<_>>(),
         "still_spp": [64, 128, 256, 512, 1024],
-        "preview_spp": [128, 256, 512, 1024, 4096],
+        "preview_spp": [64, 128, 256, 512, 1024],
         "sheet": {"metals": ["sterling", "gold14k", "bronze"], "views": ["hero", "front", "side"], "size": "1600x1600", "spp": 128},
         "reel": {"seconds": 6.0, "fps": 30, "spp": 32, "size": "1080x1920"},
         "defaults": Params::default(),
