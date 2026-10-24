@@ -11,7 +11,8 @@ set -euo pipefail
 HOST=${ARGENT_DESKTOP:-shadowbroker@100.116.134.128}
 SRC=${ARGENT_DESKTOP_LIBRARY:-jewelry-scan/}
 LIB=$HOME/argent/library/jewelry-scan
-OUT=$HOME/argent/out/catalog
+# Under the studio's --out so it is browsable at http://100.96.121.37:8790/files/catalog/index.html
+OUT=$HOME/argent/out/studio/catalog
 STATE=$HOME/.local/state/argent
 ARGENT=${ARGENT_BIN:-$HOME/.local/bin/argent}
 STAMP=$STATE/desktop-catalog-$(date -u +%F).done
