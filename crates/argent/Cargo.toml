@@ -1,6 +1,6 @@
 [package]
 name = "argent"
-description = "Photoreal jewelry renders from STL: stills, turntables, catalog sheets, a live studio."
+description = "Photoreal jewelry renders from STL: stills, turntable reels, listing sheets, a live studio."
 edition.workspace = true
 version.workspace = true
 license.workspace = true
@@ -17,3 +17,8 @@ argent-post.workspace = true
 anyhow.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+rayon.workspace = true
+glam.workspace = true
+parking_lot.workspace = true
+clap = { version = "4.6.7", features = ["derive"] }
+libc = "0.2"
