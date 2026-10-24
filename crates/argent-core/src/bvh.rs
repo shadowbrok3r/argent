@@ -377,6 +377,7 @@ fn collapse(nodes: &[Node]) -> Vec<Node4> {
     wide
 }
 
+#[cfg(test)]
 #[inline(always)]
 fn slab(n: &Node, ray: &Ray, inv: V3, t_max: f32) -> Option<f32> {
     let t0 = (V3::from(n.min) - ray.o) * inv;

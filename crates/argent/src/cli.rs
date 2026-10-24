@@ -66,6 +66,10 @@ enum Cmd {
         /// Also keep the PNG frames in this directory.
         #[arg(long)]
         frames: Option<PathBuf>,
+        /// Motion: turntable (full turn), reveal (macro rack-focus dolly-out, then a
+        /// turn), sweep (a strip light glides across while the piece turns 40°).
+        #[arg(long, default_value = "turntable")]
+        rig: String,
     },
     /// Listing set: every metal × view as stills plus a captioned contact sheet.
     Sheet {
@@ -141,8 +145,8 @@ pub fn run() -> Result<()> {
     match cli.cmd {
         Cmd::Info { piece, json } => jobs::info(&piece, json),
         Cmd::Render { piece, shot, out, turn } => jobs::render(&piece, &shot, &out, turn),
-        Cmd::Turntable { piece, shot, out, seconds, fps, hook, audio, qc, frames } => {
-            jobs::turntable(&piece, &shot, &out, seconds, fps, hook.as_deref(), audio, qc, frames)
+        Cmd::Turntable { piece, shot, out, seconds, fps, hook, audio, qc, frames, rig } => {
+            jobs::turntable(&piece, &shot, &out, seconds, fps, hook.as_deref(), audio, qc, frames, &rig)
         }
         Cmd::Sheet { piece, shot, out, metals, views, title } => jobs::sheet(&piece, &shot, &out, &metals, &views, title).map(|_| ()),
         Cmd::Batch { dir, out, shot, metals, views, no_turntable, seconds } => {

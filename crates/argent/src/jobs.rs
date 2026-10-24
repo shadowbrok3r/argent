@@ -386,9 +386,11 @@ pub fn turntable(
     audio: Option<PathBuf>,
     qc: bool,
     frames_dir: Option<PathBuf>,
+    rig: &str,
 ) -> Result<()> {
     let p = prepare(args)?;
-    render_turntable(&p, shot, out, seconds, fps, hook, audio, frames_dir)?;
+    let rig = Rig::from_name(rig).with_context(|| format!("unknown rig {rig} (turntable, reveal, sweep)"))?;
+    render_reel(&p, shot, out, seconds, fps, hook, audio, frames_dir, rig)?;
     if qc {
         print_qc(out)?;
     }
@@ -405,6 +407,36 @@ pub fn print_qc(out: &Path) -> Result<bool> {
     Ok(r.passed)
 }
 
+/// Camera and light motion for a reel.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Rig {
+    /// One full turn, fixed camera: the safest reel there is.
+    Turntable,
+    /// Macro on the face with shallow focus, dolly out to the hero framing
+    /// while focus racks to the whole piece, then a full turn.
+    Reveal,
+    /// A hot strip light glides across in front while the piece turns 40°.
+    Sweep,
+}
+
+impl Rig {
+    pub fn from_name(s: &str) -> Option<Rig> {
+        Some(match s.trim().to_ascii_lowercase().as_str() {
+            "turntable" | "turn" | "spin" => Rig::Turntable,
+            "reveal" | "dolly" | "macro" => Rig::Reveal,
+            "sweep" | "glint" | "light-sweep" => Rig::Sweep,
+            _ => return None,
+        })
+    }
+}
+
+#[inline]
+fn ease(t: f32) -> f32 {
+    let t = t.clamp(0.0, 1.0);
+    t * t * (3.0 - 2.0 * t)
+}
+
+/// Keeps the old name working for callers that only want a turn.
 #[allow(clippy::too_many_arguments)]
 pub fn render_turntable(
     p: &Prepared,
@@ -416,6 +448,21 @@ pub fn render_turntable(
     audio: Option<PathBuf>,
     frames_dir: Option<PathBuf>,
 ) -> Result<()> {
+    render_reel(p, shot, out, seconds, fps, hook, audio, frames_dir, Rig::Turntable)
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn render_reel(
+    p: &Prepared,
+    shot: &ShotArgs,
+    out: &Path,
+    seconds: f32,
+    fps: u32,
+    hook: Option<&str>,
+    audio: Option<PathBuf>,
+    frames_dir: Option<PathBuf>,
+    rig: Rig,
+) -> Result<()> {
     let lk = look(shot)?;
     let v = view(shot)?;
     let mut q = quality(shot)?;
@@ -424,8 +471,51 @@ pub fn render_turntable(
         q.spp = 32;
     }
     let n = (seconds * fps as f32).round().max(2.0) as u32;
-    let cam = p.turntable_camera(&v, &lens(shot), q.width as f32 / q.height as f32);
+    let aspect = q.width as f32 / q.height as f32;
+    let lens0 = lens(shot);
+    let turn_cam = p.turntable_camera(&v, &lens0, aspect);
     let base = p.scene(&lk);
+    // Per-frame camera, turntable angle and studio for each rig.
+    let frame_setup = |i: u32| -> (argent_core::camera::Camera, f32, Option<argent_core::light::Panel>) {
+        let t = i as f32 / n as f32;
+        match rig {
+            Rig::Turntable => (turn_cam.clone(), 360.0 * t, None),
+            Rig::Reveal => {
+                const SPLIT: f32 = 0.38;
+                if t < SPLIT {
+                    let k = ease(t / SPLIT);
+                    let mut vv = v;
+                    vv.fill = 1.9 + (v.fill - 1.9) * k;
+                    vv.azimuth_deg = v.azimuth_deg - 18.0 * (1.0 - k);
+                    vv.elevation_deg = v.elevation_deg + 6.0 * (1.0 - k);
+                    let l = argent_core::camera::Lens { focal_mm: lens0.focal_mm, f_stop: 2.8 + 30.0 * k * k };
+                    let mut cam = p.camera(&vv, &l, aspect);
+                    if k > 0.97 {
+                        cam.lens_radius = 0.0;
+                    }
+                    (cam, 0.0, None)
+                } else {
+                    let k = ease((t - SPLIT) / (1.0 - SPLIT));
+                    (p.camera(&v, &lens0, aspect), 360.0 * k, None)
+                }
+            }
+            Rig::Sweep => {
+                let k = ease(t);
+                let r = p.radius / 15.0;
+                let x = (-320.0 + 640.0 * k) * r;
+                let strip = argent_core::light::Panel::facing(
+                    "sweep",
+                    argent_core::geom::V3::new(x, 60.0 * r, 260.0 * r),
+                    argent_core::geom::V3::ZERO,
+                    60.0 * r,
+                    520.0 * r,
+                    argent_core::geom::V3::Y,
+                    Some(argent_core::studio::emitter(6000.0, 14.0)),
+                );
+                (turn_cam.clone(), -20.0 + 40.0 * k, Some(strip))
+            }
+        }
+    };
     let audio_spec = match audio {
         Some(a) => argent_post::video::Audio::File(a),
         None => argent_post::video::Audio::Silent,
@@ -444,7 +534,12 @@ pub fn render_turntable(
     let t0 = Instant::now();
     for i in 0..n {
         let mut scene = base.clone();
-        scene.turntable_deg = 360.0 * i as f32 / n as f32;
+        let (cam, turn, extra) = frame_setup(i);
+        scene.turntable_deg = turn;
+        if let Some(panel) = extra {
+            scene.panels.push(panel);
+            scene.rebuild_lights();
+        }
         let img = render_image(&scene, &cam, &q, 11)?;
         #[allow(unused_mut)]
         let mut frame = argent_post::develop(&img, &g);

@@ -12,7 +12,7 @@ use std::sync::Arc;
 
 /// A softbox emitting `intensity` × a blackbody at `kelvin` normalized to
 /// luminance 1.
-fn emitter(kelvin: f32, intensity: f32) -> Arc<dyn Spectrum> {
+pub fn emitter(kelvin: f32, intensity: f32) -> Arc<dyn Spectrum> {
     struct Scaled(Blackbody, f32);
     impl Spectrum for Scaled {
         fn eval(&self, l: f32) -> f32 {
