@@ -849,6 +849,12 @@ pub fn sheet_prepared(p: &Prepared, name: &str, shot: &ShotArgs, out: &Path, met
     Ok(manifest)
 }
 
+/// UTC timestamp without pulling in a date crate.
+fn chrono_like_now() -> String {
+    let out = std::process::Command::new("date").args(["-u", "+%Y-%m-%d %H:%M UTC"]).output();
+    out.map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string()).unwrap_or_default()
+}
+
 /// Captioned contact sheet from existing images.
 pub fn montage(images: &[PathBuf], out: &Path, columns: u32, tile: u32, title: Option<String>, subtitle: Option<String>) -> Result<()> {
     let mut tiles = vec![];
@@ -927,21 +933,31 @@ pub fn batch(dir: &Path, out: &Path, shot: &ShotArgs, metals: &[String], views: 
         }
         rows.push((name, m, reel));
     }
+    let esc = |t: &str| t.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('\'', "&#39;");
     let mut html = String::from(
-        "<!doctype html><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'><title>argent catalog</title>\
-         <style>body{background:#0e0e0f;color:#e8e2d6;font-family:Georgia,serif;margin:0;padding:16px}h2{font-weight:normal;margin:28px 0 6px}\
-         .row{display:flex;gap:10px;overflow-x:auto}.row img,.row video{height:360px;border-radius:6px}small{color:#a99}</style><h1>Catalog</h1>",
+        "<!doctype html><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'><title>Catalog</title>\
+         <link rel=stylesheet href='https://fonts.googleapis.com/css2?family=Cinzel:wght@500&family=Spectral:wght@300;400&family=JetBrains+Mono&display=swap'>\
+         <style>:root{--bg:#0e0d0c;--fg:#e8e2d6;--muted:#a39a8c;--line:#2b2723;--gold:#cfa95e}\
+         body{background:var(--bg);color:var(--fg);font-family:Spectral,Georgia,serif;margin:0;padding:24px max(16px,env(safe-area-inset-left))}\
+         h1{font-family:Cinzel,serif;font-weight:500;letter-spacing:.08em;margin:0 0 4px}header p{color:var(--muted);margin:0 0 24px}\
+         section{border-top:1px solid var(--line);padding:18px 0}h2{font-family:Cinzel,serif;font-weight:500;font-size:20px;letter-spacing:.05em;margin:0}\
+         .meta{font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--muted);margin:4px 0 12px}\
+         .row{display:flex;gap:10px;overflow-x:auto;padding-bottom:6px}.row img,.row video{height:300px;border-radius:4px;background:#000;cursor:zoom-in}\
+         #lb{position:fixed;inset:0;background:rgba(0,0,0,.92);display:none;align-items:center;justify-content:center}#lb img{max-width:96vw;max-height:94vh}</style>\
+         <header><h1>Catalog</h1><p>",
     );
+    html.push_str(&format!("{} pieces · rendered by argent from the casting files · {}</p></header>", rows.len(), chrono_like_now()));
     for (name, m, reel) in &rows {
-        html.push_str(&format!("<h2>{name}</h2><small>{}</small><div class=row>", m.weights_g.iter().map(|(a, g)| format!("{a} ≈ {g:.1} g")).collect::<Vec<_>>().join(" · ")));
+        html.push_str(&format!("<section><h2>{}</h2><p class=meta>{}</p><div class=row>", esc(name), esc(&m.weights_g.iter().map(|(a, g)| format!("{a} ≈ {g:.1} g")).collect::<Vec<_>>().join(" · "))));
         if let Some(r) = reel {
-            html.push_str(&format!("<video src='{name}/{r}' autoplay muted loop playsinline></video>"));
+            html.push_str(&format!("<video src='{}/{}' autoplay muted loop playsinline></video>", esc(name), esc(r)));
         }
         for it in &m.items {
-            html.push_str(&format!("<img loading=lazy src='{name}/{}' title='{} {}'>", it.file, it.metal, it.view));
+            html.push_str(&format!("<img loading=lazy src='{}/{}' alt='{} {}' onclick=\"lb.querySelector('img').src=this.src;lb.style.display='flex'\">", esc(name), esc(&it.file), esc(&it.metal), esc(&it.view)));
         }
-        html.push_str("</div>");
+        html.push_str(&format!("<img loading=lazy src='{}/{}' alt='sheet' onclick=\"lb.querySelector('img').src=this.src;lb.style.display='flex'\"></div></section>", esc(name), esc(&m.contact_sheet)));
     }
+    html.push_str("<div id=lb onclick=\"this.style.display='none'\"><img alt=''></div>");
     std::fs::write(out.join("index.html"), html)?;
     eprintln!("catalog: {} pieces → {}", rows.len(), out.join("index.html").display());
     Ok(())
