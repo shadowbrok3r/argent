@@ -224,12 +224,49 @@ pub fn sidecar_stone_rules(files: &[PathBuf]) -> Vec<StoneRule> {
             let (Some(obj), Some(label)) = (st.get("object").and_then(|x| x.as_str()), st.get("label").and_then(|x| x.as_str())) else {
                 continue;
             };
-            if let Some(g) = argent_core::shot::gem_from_text(label) {
+            let tint = st.get("tint_linear_rgb").and_then(|t| t.as_array()).map(|a| {
+                let v: Vec<f32> = a.iter().filter_map(|x| x.as_f64()).map(|x| x as f32).collect();
+                [v.first().copied().unwrap_or(0.0), v.get(1).copied().unwrap_or(0.0), v.get(2).copied().unwrap_or(0.0)]
+            });
+            if let Some(g) = argent_core::shot::gem_from_text(label).or_else(|| tint.map(gem_from_tint)) {
                 rules.push(StoneRule { part: obj.to_string(), gem: g });
             }
         }
     }
     rules
+}
+
+/// RingDesigner stores each stone's display colour as `tint_linear_rgb`;
+/// when a label names no gem ("Oval 7 × 5"), the tint picks one. Its
+/// default tint (0.72, 0.82, 0.92) means a white stone.
+pub fn gem_from_tint(t: [f32; 3]) -> String {
+    let (r, g, b) = (t[0], t[1], t[2]);
+    let mx = r.max(g).max(b);
+    let mn = r.min(g).min(b);
+    if mx < 0.08 {
+        return "onyx".into();
+    }
+    let chroma = mx - mn;
+    if chroma < 0.25 * mx {
+        return "diamond".into();
+    }
+    let h = if mx == r {
+        60.0 * (((g - b) / chroma).rem_euclid(6.0))
+    } else if mx == g {
+        60.0 * ((b - r) / chroma + 2.0)
+    } else {
+        60.0 * ((r - g) / chroma + 4.0)
+    };
+    let light = mn > 0.35 * mx;
+    let gem = match h {
+        h if !(20.0..330.0).contains(&h) => if light { "pink_sapphire" } else { "ruby" },
+        h if h < 70.0 => "citrine",
+        h if h < 165.0 => "emerald",
+        h if h < 200.0 => "aquamarine",
+        h if h < 255.0 => if light { "blue_topaz" } else { "sapphire" },
+        _ => "amethyst",
+    };
+    gem.into()
 }
 
 pub fn piece_name(files: &[PathBuf]) -> String {
@@ -977,6 +1014,16 @@ pub fn batch(dir: &Path, out: &Path, shot: &ShotArgs, metals: &[String], views: 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn tints_pick_stones() {
+        assert_eq!(gem_from_tint([0.72, 0.82, 0.92]), "diamond");
+        assert_eq!(gem_from_tint([0.45, 0.01, 0.04]), "ruby");
+        assert_eq!(gem_from_tint([0.012, 0.012, 0.016]), "onyx");
+        assert_eq!(gem_from_tint([0.27, 0.045, 0.46]), "amethyst");
+        assert_eq!(gem_from_tint([0.05, 0.4, 0.15]), "emerald");
+        assert_eq!(gem_from_tint([0.03, 0.1, 0.6]), "sapphire");
+    }
 
     #[test]
     fn drop_is_the_first_big_jump() {
