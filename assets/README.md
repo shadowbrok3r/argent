@@ -1,6 +1,6 @@
 # argent test assets
 
-Real jewellery meshes for local render testing. Everything in `ringdesigner/` and `gems/` comes from Logan's own **RingDesigner** (github `shadowbrok3r/RingDesigner`, licensed `MIT OR Apache-2.0`, built from commit `006e043`): his authored showcase designs, exported here for local render testing. `test/` holds one third-party mesh (CC BY 4.0, attribution below). The repo's `.gitignore` excludes everything under `assets/` except this README and the exporter source, so none of these meshes are in git.
+Real jewellery meshes for local render testing. Everything in `ringdesigner/` and `gems/` comes from shadowbroker's own **RingDesigner** (github `shadowbrok3r/RingDesigner`, licensed `MIT OR Apache-2.0`, built from commit `006e043`): his authored showcase designs, exported here for local render testing. `test/` holds one third-party mesh (CC BY 4.0, attribution below). The repo's `.gitignore` excludes everything under `assets/` except this README and the exporter source, so none of these meshes are in git.
 
 ## Conventions (RingDesigner rings)
 

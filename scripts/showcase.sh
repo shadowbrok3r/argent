@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The morning showcase: final-quality renders of Logan's RingDesigner
+# The morning showcase: final-quality renders of shadowbroker's RingDesigner
 # designs for the report. ~20 min on the 32-core box.
 set -uo pipefail
 A=${ARGENT_BIN:-$HOME/argent/target-int/release/argent}
