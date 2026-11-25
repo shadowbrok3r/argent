@@ -1,6 +1,6 @@
 ---
 name: argent
-description: Photoreal renders of Logan's jewelry from STL/OBJ/3MF with argent (spectral path tracer on the R9700 box's CPUs): stills in any metal and studio, Forge-spec turntable reels, listing sheets with weight estimates. Read it before rendering a ring or pendant for content, a listing or a design review.
+description: Photoreal renders of shadowbroker's jewelry from STL/OBJ/3MF with argent (spectral path tracer on the R9700 box's CPUs): stills in any metal and studio, Forge-spec turntable reels, listing sheets with weight estimates. Read it before rendering a ring or pendant for content, a listing or a design review.
 ---
 
 # argent — jewelry renders from the mesh
@@ -47,5 +47,5 @@ A turntable reel from `argent turntable` meets Forge's reel spec (1080x1920, 30 
 3–90 s, < 25 Mbps) and `--qc` runs Forge's own checks. It is a file only: the owner decides what is posted.
 
 ## The live studio
-`http://100.96.121.37:8790` — Logan's phone studio: open a piece, drag to orbit, change metal/studio/patina and
+`http://100.96.121.37:8790` — shadowbroker's phone studio: open a piece, drag to orbit, change metal/studio/patina and
 watch it converge; final stills, sheets and reels from there land in `/home/shadowbroker/argent/out/studio`.
